@@ -31,7 +31,7 @@ si_shap/
 - `inference.py`：スプライン効果基底、カイ統計量、AIS と収束診断
 - `simulation.py`：データ生成、3 手法の実行、FPR 集計
 - `plotting.py`：p 値ヒストグラムの可視化
-- `notebooks/`：シミュレーションの実行例
+- `notebooks/`：シミュレーションの実行例（`naive_vs_random.ipynb` は未知分散 F 検定と既知分散カイ二乗検定の両方に対応）
 - `docs/`：各実験の仮定、数式、検定手順の説明
 - `tests/`：特徴選択、統計量、集計処理の回帰テスト
 
