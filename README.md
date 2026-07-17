@@ -7,31 +7,46 @@
 ```text
 si_shap/
 ├── README.md
-├── requirements.txt
+├── pyproject.toml
 ├── src/
 │   └── si_shap/
 │       ├── __init__.py
-│       └── simulation.py
+│       ├── selection.py
+│       ├── inference.py
+│       ├── simulation.py
+│       └── plotting.py
 ├── notebooks/
-│   └── run_selective_inference_simulation.ipynb
+│   ├── naive_vs_random.ipynb
+│   └── si_vs_naive_vs_random.ipynb
 ├── docs/
-│   └── selective_inference_method.md
-└── outputs/
-    └── legacy_simulation_output.html
+│   ├── naive_vs_random.md
+│   └── si_vs_naive_vs_random.md
+└── tests/
+    ├── test_selection.py
+    ├── test_inference.py
+    └── test_simulation.py
 ```
 
-- `src/si_shap/simulation.py`：データ生成、SHAP 選択、未知分散の部分 $F$ 検定、AIS、FPR 集計の実装
-- `notebooks/run_selective_inference_simulation.ipynb`：シミュレーションの実行、診断、可視化
-- `docs/selective_inference_method.md`：仮定、数式、選択事象、選択的 p 値の説明
-- `requirements.txt`：検証済み Python 依存関係
-- `outputs/legacy_simulation_output.html`：旧実装の出力。現在の AIS 実装の結果ではないため参考用
+- `selection.py`：Random Forest、Tree SHAP 重要度、決定的な上位 $k$ 特徴選択
+- `inference.py`：スプライン効果基底、カイ統計量、AIS と収束診断
+- `simulation.py`：データ生成、3 手法の実行、FPR 集計
+- `plotting.py`：p 値ヒストグラムの可視化
+- `notebooks/`：シミュレーションの実行例
+- `docs/`：各実験の仮定、数式、検定手順の説明
+- `tests/`：特徴選択、統計量、集計処理の回帰テスト
 
 ## 実行方法
 
-リポジトリルートで依存関係をインストールします。
+リポジトリルートでパッケージ、Notebook 用依存関係、テスト用依存関係をインストールします。
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m pip install -e ".[notebook,test]"
 ```
 
-その後、`notebooks/run_selective_inference_simulation.ipynb` を開いて上から実行します。AIS は候補応答ごとに Random Forest の再学習と SHAP の再計算を行うため、最初は `n_iters` を小さくして動作を確認してください。
+その後、`notebooks/si_vs_naive_vs_random.ipynb` を開いて上から実行します。AIS は候補応答ごとに Random Forest の再学習と SHAP の再計算を行うため、最初は `n_iters` を小さくして動作を確認してください。
+
+テストは次のコマンドで実行できます。
+
+```powershell
+python -m pytest
+```
