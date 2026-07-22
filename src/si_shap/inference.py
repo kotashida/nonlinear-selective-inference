@@ -9,6 +9,7 @@ from scipy.special import logsumexp
 
 
 TRUE_SIGMA = 1.0
+DEFENSIVE_MIXTURE_WEIGHTS = (0.25, 0.375, 0.375)
 
 
 def _spline_effect_basis(x):
@@ -53,6 +54,23 @@ def _sample_truncated_normal(rng, mean, sd, size):
         size=size,
         random_state=rng,
     )
+
+
+def _defensive_mixture_logpdf(z, rank, t_obs, adapted_mean, adapted_sd):
+    """Evaluate the proposal density used by the final AIS stage."""
+    z = np.asarray(z)
+    observed_sd = max(0.75, 0.25 * t_obs + 0.5)
+    component_logpdf = np.vstack(
+        [
+            np.log(DEFENSIVE_MIXTURE_WEIGHTS[0])
+            + stats.chi.logpdf(z, df=rank),
+            np.log(DEFENSIVE_MIXTURE_WEIGHTS[1])
+            + _truncated_normal_logpdf(z, t_obs, observed_sd),
+            np.log(DEFENSIVE_MIXTURE_WEIGHTS[2])
+            + _truncated_normal_logpdf(z, adapted_mean, adapted_sd),
+        ]
+    )
+    return logsumexp(component_logpdf, axis=0)
 
 
 def _effective_sample_size(weights):
@@ -108,7 +126,7 @@ def _adapt_proposal(
 
 
 def _sample_defensive_mixture(rng, size, rank, t_obs, adapted_mean, adapted_sd):
-    mixture_weights = np.array([0.25, 0.375, 0.375])
+    mixture_weights = np.asarray(DEFENSIVE_MIXTURE_WEIGHTS)
     counts = rng.multinomial(size, mixture_weights)
     observed_sd = max(0.75, 0.25 * t_obs + 0.5)
 
@@ -120,16 +138,14 @@ def _sample_defensive_mixture(rng, size, rank, t_obs, adapted_mean, adapted_sd):
     z_values = np.concatenate(samples)
     rng.shuffle(z_values)
 
-    component_logpdf = np.vstack(
-        [
-            np.log(mixture_weights[0]) + stats.chi.logpdf(z_values, df=rank),
-            np.log(mixture_weights[1])
-            + _truncated_normal_logpdf(z_values, t_obs, observed_sd),
-            np.log(mixture_weights[2])
-            + _truncated_normal_logpdf(z_values, adapted_mean, adapted_sd),
-        ]
+    proposal_logpdf = _defensive_mixture_logpdf(
+        z_values,
+        rank,
+        t_obs,
+        adapted_mean,
+        adapted_sd,
     )
-    return z_values, logsumexp(component_logpdf, axis=0)
+    return z_values, proposal_logpdf
 
 
 def _run_ais(

@@ -8,7 +8,19 @@ from scipy import stats
 from tqdm.auto import tqdm
 
 from .inference import TRUE_SIGMA, _chi_statistic, _run_ais, _spline_effect_basis
-from .selection import _select_features, _top_k, _tree_shap_importance
+from .selection import (
+    _resolve_rf_params,
+    _select_features,
+    _top_k,
+    _tree_shap_importance,
+)
+
+
+def _generate_null_dataset(rng, n_samples, n_features):
+    """Generate one global-null data set from a NumPy random generator."""
+    X = rng.standard_normal((n_samples, n_features))
+    response = rng.standard_normal(n_samples)
+    return X, response
 
 
 def _validate_inputs(n_iters, n_samples, n_features, k_select, alpha):
@@ -83,8 +95,12 @@ def run_simulation(
     max_final_samples=800,
     min_denominator_ess=80.0,
     min_tail_ess=15.0,
+    rf_params=None,
 ):
-    """Run the global-null experiment documented in ``docs/``."""
+    """Run the global-null experiment documented in ``docs/``.
+
+    ``rf_params`` may override any default ``RandomForestRegressor`` parameter.
+    """
     _validate_inputs(n_iters, n_samples, n_features, k_select, alpha)
     if not isinstance(selection_decimals, int) or selection_decimals < 0:
         raise ValueError("selection_decimals must be a nonnegative integer.")
@@ -94,9 +110,10 @@ def run_simulation(
         raise ValueError("Final AIS sample counts must be positive.")
     if min_denominator_ess <= 0 or min_tail_ess <= 0:
         raise ValueError("AIS ESS thresholds must be positive.")
+    resolved_rf_params = _resolve_rf_params(rf_params)
 
     random_p_values = []
-    naive_p_values = []
+    unadjusted_p_values = []
     selective_p_values = []
     ais_diagnostics = []
 
@@ -108,10 +125,11 @@ def run_simulation(
         data_rng = np.random.default_rng(data_seed)
         random_selection_rng = np.random.default_rng(random_selection_seed)
 
-        X = data_rng.standard_normal((n_samples, n_features))
-        response = data_rng.standard_normal(n_samples)
+        X, response = _generate_null_dataset(data_rng, n_samples, n_features)
 
-        shap_importance = _tree_shap_importance(X, response, selection_decimals)
+        shap_importance = _tree_shap_importance(
+            X, response, selection_decimals, rf_params=resolved_rf_params
+        )
         shap_selected = _top_k(shap_importance, k_select)
         random_selected = random_selection_rng.choice(
             n_features, size=k_select, replace=False
@@ -124,14 +142,14 @@ def run_simulation(
             random_iteration.append(stats.chi.sf(statistic, df=basis.shape[1]))
         random_p_values.append(np.asarray(random_iteration))
 
-        naive_iteration = []
+        unadjusted_iteration = []
         selective_iteration = []
         feature_seeds = ais_seed.spawn(k_select)
         for position, feature in enumerate(shap_selected):
             basis = _spline_effect_basis(X[:, feature])
             rank = basis.shape[1]
             statistic, projected = _chi_statistic(response, basis)
-            naive_iteration.append(stats.chi.sf(statistic, df=rank))
+            unadjusted_iteration.append(stats.chi.sf(statistic, df=rank))
 
             orthogonal = response - projected
             projected_norm = np.linalg.norm(projected)
@@ -147,7 +165,11 @@ def run_simulation(
             def is_selected(z):
                 candidate = orthogonal + TRUE_SIGMA * direction * z
                 selected = _select_features(
-                    X, candidate, k_select, selection_decimals
+                    X,
+                    candidate,
+                    k_select,
+                    selection_decimals,
+                    rf_params=resolved_rf_params,
                 )
                 return bool(feature in selected)
 
@@ -175,19 +197,20 @@ def run_simulation(
                     "feature": int(feature),
                     "rank": rank,
                     "t_obs": statistic,
+                    "p_value": p_value,
                 }
             )
             ais_diagnostics.append(diagnostics)
             selective_iteration.append(p_value)
 
-        naive_p_values.append(np.asarray(naive_iteration))
+        unadjusted_p_values.append(np.asarray(unadjusted_iteration))
         selective_p_values.append(np.asarray(selective_iteration))
 
     random_summary, random_flat = _method_summary(
         "Random", random_p_values, alpha, require_complete=True
     )
-    naive_summary, naive_flat = _method_summary(
-        "Naive SHAP", naive_p_values, alpha, require_complete=True
+    unadjusted_summary, unadjusted_flat = _method_summary(
+        "Unadjusted SHAP", unadjusted_p_values, alpha, require_complete=True
     )
     selective_summary, selective_flat = _method_summary(
         "Selective SHAP (AIS)",
@@ -196,13 +219,15 @@ def run_simulation(
         require_complete=True,
     )
 
-    summary = pd.DataFrame([random_summary, naive_summary, selective_summary])
+    summary = pd.DataFrame(
+        [random_summary, unadjusted_summary, selective_summary]
+    )
     diagnostics = pd.DataFrame(ais_diagnostics)
     return {
         "summary": summary,
         "p_values": {
             "Random": random_flat,
-            "Naive SHAP": naive_flat,
+            "Unadjusted SHAP": unadjusted_flat,
             "Selective SHAP (AIS)": selective_flat,
         },
         "ais_diagnostics": diagnostics,
@@ -214,5 +239,6 @@ def run_simulation(
             "k_select": k_select,
             "seed": seed,
             "selection_decimals": selection_decimals,
+            "rf_params": resolved_rf_params.copy(),
         },
     }

@@ -1,0 +1,260 @@
+% !TeX program = lualatex
+% Compile from the presentation directory with:
+%   lualatex presentation.tex
+% Edit the presenter and date below as needed.
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usepackage{fontspec}
+\usepackage{luatexja-fontspec}
+
+\setsansfont{Arial}
+\setsansjfont{HaranoAjiGothic-Medium}
+
+\renewcommand{\familydefault}{\sfdefault}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{array}
+
+\usetheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamercolor{normal text}{fg=black,bg=white}
+\setbeamercolor{structure}{fg=black}
+\setbeamercolor{alerted text}{fg=black}
+\setbeamercolor{title}{fg=black}
+\setbeamercolor{subtitle}{fg=black}
+\setbeamercolor{author}{fg=black}
+\setbeamercolor{date}{fg=black}
+\setbeamercolor{itemize item}{fg=black}
+\setbeamercolor{itemize subitem}{fg=black}
+\definecolor{HeaderBar}{HTML}{213A3D}
+\definecolor{PlotBlue}{HTML}{1F77B4}
+\definecolor{PlotOrange}{HTML}{FF7F0E}
+\definecolor{PlotGreen}{HTML}{CFE8CF}
+\definecolor{PlotGreenDark}{HTML}{2E7D32}
+\definecolor{PlotRed}{HTML}{D62728}
+\setbeamercolor{frametitle}{fg=white,bg=HeaderBar}
+\setbeamerfont{frametitle}{series=\bfseries}
+\setbeamercolor{footline}{fg=black,bg=white}
+
+\graphicspath{{assets/}}
+
+\title{\textbf{SI Research Discussion}}
+\author{志田浩太}
+\date{July 17, 2026}
+
+\setbeamertemplate{footline}{
+  \leavevmode
+  \hbox{%
+    \begin{beamercolorbox}[
+      wd=\paperwidth,
+      ht=2.3ex,
+      dp=1.1ex,
+      rightskip=0.5cm
+    ]{footline}
+      \hfill\insertframenumber/\inserttotalframenumber
+    \end{beamercolorbox}%
+  }
+}
+
+\begin{document}
+
+% -----------------------------------------------------------------------------
+\begin{frame}[plain,noframenumbering]
+  \titlepage
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}{進捗}
+  \begin{itemize}
+    \item \text{非線形特徴選択に起因する選択バイアスとランダム選択の検証}
+    \vspace{0.55cm}
+    \item \text{Importance Sampling \& Adaptive Importance Sampling の勉強}
+    \vspace{0.55cm}
+    \item \text{RF の Tree SHAP で選択された特徴量の選択領域の数値計算・可視化}
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}{Unadjusted vs. Random：実験設定}
+  \textbf{グローバル帰無仮説}
+  \[
+    \begin{gathered}
+      X_{ij}\overset{\mathrm{i.i.d.}}{\sim}\mathcal N(0,1),\qquad
+      y_i\overset{\mathrm{i.i.d.}}{\sim}\mathcal N(0,1),\qquad
+      X\perp y,\qquad \sigma^2=1\ \text{（既知）}.
+    \end{gathered}
+  \]
+
+  \vspace{0.15cm}
+  \begin{itemize}
+    \item $n=100$, $d=20$, 選択数 $k=1$
+    \item 反復数 $R=1000$, 有意水準 $\alpha=0.05$
+    \item Random Forest：50 trees, max depth 5
+    \item \textbf{Random：}$y$ と独立に1特徴を選択
+    \item \textbf{Unadjusted SHAP：}平均絶対 SHAP 値が最大の特徴を選択
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}{既知分散：カイ検定}
+  選択特徴 $j$ の B-spline 効果を表す正規直交基底を
+  $Q_j\in\mathbb R^{n\times r}$（$r=3$）とする。
+
+  \vspace{0.3cm}
+  \[
+    T_j
+    =\frac{\lVert Q_j^\top y\rVert_2}{\sigma}
+    =\lVert Q_j^\top y\rVert_2.
+  \]
+
+  $H_0$ の下で，特徴 $j$ があらかじめ固定されていれば
+  \[
+    Q_j^\top y\sim\mathcal N_r(0,I_r)
+    \quad\Longrightarrow\quad
+    T_j\sim\chi_r=\chi_3,
+  \]
+  したがって $p_j=P(\chi_3\ge T_j^{\mathrm{obs}})$ と計算する。
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}{結果：既知分散のカイ検定}
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.75\textwidth}
+      \includegraphics[width=\linewidth]{unadjusted_vs_random_known.png}
+    \end{column}
+    \begin{column}{0.23\textwidth}
+      \textbf{Random}\par
+      FPR $=0.056$
+
+      \vspace{0.7cm}
+      \textbf{Unadjusted SHAP}\par
+      FPR $=\alert{\mathbf{0.347}}$
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}{参考：未知分散の F 検定}
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.75\textwidth}
+      \includegraphics[width=\linewidth]{unadjusted_vs_random_unknown.png}
+    \end{column}
+    \begin{column}{0.23\textwidth}
+      \textbf{Random}\par
+      FPR $=0.060$
+
+      \vspace{0.7cm}
+      \textbf{Unadjusted SHAP}\par
+      FPR $=\alert{\mathbf{0.361}}$
+    \end{column}
+  \end{columns}
+
+  \vfill
+  {\small 既知分散と同じ傾向を確認。}
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}{SHAP 選択領域の構成}
+  \begin{enumerate}
+    \item \textbf{応答を1次元に制限する}
+      \[
+        \begin{gathered}
+          P_j=Q_jQ_j^\top,\qquad
+          a_j=(I-P_j)y,\qquad
+          u_j=\frac{P_jy}{\lVert P_jy\rVert_2},\\
+          y(z)=a_j+u_j z,\qquad z\ge 0
+          \quad(\sigma=1).
+        \end{gathered}
+      \]
+
+    \item \textbf{特徴 $j$ が再び選ばれる範囲を求める}
+      \[
+        \mathcal Z_j
+        =\left\{z\ge0:
+        j\in\widehat S_{\mathrm{SHAP}}\bigl(X,y(z)\bigr)\right\}.
+      \]
+
+    \item \textbf{選択を条件づける}
+
+      $H_0$ 下の $z\sim\chi_r$ を，$\mathcal Z_j$ 上で再正規化する。
+  \end{enumerate}
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}{SHAP selection regions：全6データセット}
+  \centering
+  \includegraphics[
+    width=\textwidth,
+    height=0.875\textheight,
+    keepaspectratio
+  ]{shap_selection_regions.png}
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}[t]{SHAP selection regions：代表例}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.49\textwidth}
+      \centering
+      \includegraphics[
+        width=0.90\linewidth,
+        clip,
+        trim=880bp 388bp 0bp 0bp
+      ]{shap_selection_regions.png}
+
+      \vspace{0.1cm}
+      {\small \textbf{Data 3}}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      \centering
+      \includegraphics[
+        width=0.90\linewidth,
+        clip,
+        trim=0bp 68bp 860bp 312bp
+      ]{shap_selection_regions.png}
+
+      \vspace{0.1cm}
+      {\small \textbf{Data 4}}
+    \end{column}
+  \end{columns}
+
+  \vfill
+  \centering
+  {\small
+    \fcolorbox{PlotGreenDark}{PlotGreen}{\rule{0pt}{0.13cm}\hspace{0.32cm}}
+    選択領域 $\mathcal Z_j$\quad
+    \textcolor{PlotBlue}{\rule{0.42cm}{1.6pt}} 条件付き分布\quad
+    \textcolor{PlotOrange}{\rule{0.42cm}{1.6pt}} $q_{\mathrm{final}}$\quad
+    \textcolor{PlotRed}{\rule{0.42cm}{1.6pt}} $T_{\mathrm{obs}}$
+  }
+\end{frame}
+
+% -----------------------------------------------------------------------------
+\begin{frame}{\hspace*{0.35cm}選択領域はデータごとに異なる}
+  \centering
+  {\small
+  \renewcommand{\arraystretch}{1.18}
+  \begin{tabular}{crccc>{\raggedright\arraybackslash}p{4.35cm}}
+    \toprule
+    Data & Seed & 選択特徴 & $T_{\mathrm{obs}}$ & $P(\mathcal Z_j)$ & 選択領域（$z_{\max}=6.335$） \\
+    \midrule
+    1 & 101 & $x_{14}$ & 2.196 & 0.3319 & $[1.848,\,6.335]$ \\
+    2 & 202 & $x_{1}$  & 2.578 & 0.1838 & $[2.200,\,6.335]$ \\
+    3 & 303 & $x_{17}$ & 2.666 & 0.8942 & $[0.781,\,6.335]$ \\
+    4 & 404 & $x_{0}$  & 2.250 & 0.3529 & $[1.772,\,1.862]\cup[1.898,\,6.335]$ \\
+    5 & 505 & $x_{18}$ & 2.712 & 0.0964 & $[2.517,\,6.335]$ \\
+    6 & 606 & $x_{7}$  & 3.011 & 0.1506 & $[2.304,\,6.335]$ \\
+    \bottomrule
+  \end{tabular}}
+
+  \vspace{0.45cm}
+  \begin{itemize}
+    \item $P(Z \in \mathcal Z_j) = \displaystyle\int_{\cal{Z}_j}f_{\chi_3}(z)\,dz$ は $0.096$--$0.894$ と変動
+    \item 全例で $T_{\mathrm{obs}}\in\mathcal Z_j$
+    \item Data 4 は選択領域が非連結
+    \item 探索上限より右の無条件確率は約 $10^{-8}$
+  \end{itemize}
+\end{frame}
+
+\end{document}

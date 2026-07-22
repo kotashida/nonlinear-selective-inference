@@ -1,0 +1,9 @@
+# LuaLaTeX/Beamer intermediate files
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.synctex.gz
+*.synctex(busy)

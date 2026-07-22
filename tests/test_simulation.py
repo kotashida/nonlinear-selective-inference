@@ -1,7 +1,11 @@
 import numpy as np
 import pytest
 
-from si_shap.simulation import _method_summary, _validate_inputs
+from si_shap.simulation import (
+    _generate_null_dataset,
+    _method_summary,
+    _validate_inputs,
+)
 
 
 @pytest.mark.parametrize(
@@ -29,3 +33,11 @@ def test_method_summary_reports_failures_without_silently_estimating_fpr():
     assert np.isnan(summary["fpr"])
     assert summary["failure_rate"] == 0.5
     np.testing.assert_array_equal(converged, [0.01])
+
+
+def test_generate_null_dataset_is_reproducible():
+    first = _generate_null_dataset(np.random.default_rng(123), 10, 4)
+    second = _generate_null_dataset(np.random.default_rng(123), 10, 4)
+
+    np.testing.assert_array_equal(first[0], second[0])
+    np.testing.assert_array_equal(first[1], second[1])
