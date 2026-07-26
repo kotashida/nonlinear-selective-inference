@@ -2,6 +2,57 @@
 
 This project simulates selective inference after features are selected using SHAP importance from a nonlinear model. It implements feature selection based on Random Forest Tree SHAP importance, chi tests for B-spline effects, selective $p$-value estimation using Adaptive Importance Sampling (AIS), and selection-region visualization.
 
+## Real-data API and statistical scope
+
+Use `selective_inference` for externally supplied data. The conservative default
+conditions on equality of the **unordered observed top-$k$ set**; weaker target
+feature inclusion and ordered exact-ranking events are explicit alternatives.
+
+```python
+from sklearn.ensemble import RandomForestRegressor
+from si_shap import selective_inference
+
+result = selective_inference(
+    X,
+    y,
+    k_select=2,
+    estimator=RandomForestRegressor(
+        n_estimators=100, max_depth=5, random_state=42
+    ),
+    sigma=known_sigma,
+    selection_event="exact_set",
+    multiplicity="holm",
+)
+
+print(result["observed_selected_features"])
+print(result["importance_table"])
+print(result["feature_results"])
+```
+
+The tested null is a zero fixed-design projection onto the target feature's
+centered cubic B-spline basis: a **marginal nonlinear-association** hypothesis,
+not a Random Forest coefficient, a SHAP value, a conditional effect, or a causal
+effect. Validity requires fixed `X`, independent Gaussian errors with known,
+user-supplied `sigma`, and a deterministic selection pipeline. Unknown-variance
+inference is deliberately rejected rather than silently estimating variance from
+selected data. The currently supported built-in combination is a cloneable
+scikit-learn tree estimator with Tree SHAP; `RandomForestRegressor` is the
+officially tested estimator and every exposed `random_state` must be fixed.
+
+`feature_results` contains individual raw selective p-values, optional Holm or
+Bonferroni adjusted values, the event definition, denominator and tail ESS,
+Monte Carlo standard error, and convergence status. Exact-set conditioning does
+not itself correct multiplicity. A non-`ok` row has `NaN` as its selective
+p-value and must not be interpreted as a valid estimate. These are
+selection-adjusted p-values conditionally valid under the stated assumptions, up
+to numerical and Monte Carlo error.
+
+For `k_select=k`, the API returns `k` rows and selection-region visualization
+returns `k` plots: every selected feature has a distinct response path
+`y_j(z)`. Exact-set conditioning is stronger and can reduce power and effective
+sample size; inclusion is weaker, while exact-ranking additionally preserves
+the observed order.
+
 ## Repository Structure
 
 The following tree shows the current layout of source files and retained project artifacts. Local environments, caches, and intermediate build files such as `.venv/` are described later.
@@ -165,6 +216,61 @@ denominator and tail ESS and the Monte Carlo standard error. A non-`ok` status
 has `p_value=NaN`; increase `--max-final-samples` or revise the ESS thresholds
 rather than interpreting it as a valid p-value.
 
+### Compare exact-set and feature-inclusion power
+
+Use the paired power experiment to compare the two conditioning events under a
+nonlinear alternative:
+
+```powershell
+python examples/compare_selection_event_power.py `
+    --preset calibrated
+```
+
+The `quick` preset runs 10 iterations with signal strength 0.3 and an AIS
+ceiling of 800 for smoke testing. The default `calibrated` preset runs 100
+iterations at the same signal strength, 40 samples per proposal pilot, and a
+ceiling of 1,600. The `calibrated_plus` preset increases the proposal pilot to
+200 samples and the AIS ceiling to 6,400. The explicitly opt-in `stress` preset
+uses signal strength 1.0 and a much larger AIS ceiling; it is intended to
+diagnose extreme-tail behavior and can be very slow. Any of `--n-iters`,
+`--signal-strength`, `--pilot-samples`, or `--max-final-samples` overrides its
+preset value.
+
+Every event is evaluated on identical generated data and with the same AIS seed
+within an iteration. The primary `power` estimate is
+`P(signal feature is selected and its selective test rejects)`. The output also
+separates `signal_selection_rate` and `conditional_power`, because the former is
+identical across conditioning events while the latter can differ. A strict
+power estimate is `NaN` if any selected-signal AIS test fails; the explicitly
+labeled `converged_power` remains available for diagnosis.
+
+The plot shows a converged-only fallback only when at least 20 and at least
+half of the iterations are complete; otherwise it reports `NA` with the
+complete-case count. Result files are staged together and replace the output
+directory only after every CSV, JSON, and plot has been generated successfully.
+`settings.json` records the selected preset, package versions, Python/platform
+details, and Git commit/dirty state.
+
+Use `k_select >= 2` for this comparison. When `k_select=1`, preserving the full
+selected set and preserving inclusion of its only feature are the same event, so
+their exact power is identical.
+
+Results are saved under the repository's `outputs/selection_event_power/`
+folder by default, even when the command is launched from another working
+directory. Use `--output-dir` only when a different location is desired:
+
+- `power_summary.csv`: power, selection, and failure metrics by event.
+- `paired_power_comparison.csv`: paired power differences, standard errors, and
+  approximate 95% intervals; positive means the comparison event has more power
+  than the baseline event.
+- `signal_results.csv` and `feature_results.csv`: iteration-level data for
+  auditing the aggregate estimates.
+- `power_comparison.png`: a bar chart of overall power with simulation-error
+  bars.
+
+Increase `--n-iters` for a final comparison. The workflow is computationally
+expensive because AIS repeatedly refits the selection model for both events.
+
 Generate the selection-region figure and CSV from the repository root with:
 
 ```powershell
@@ -179,8 +285,9 @@ earlier outputs, run the sweep example.  The default quick preset compares
 python examples/sweep_selection_region_settings.py 101 202 303
 ```
 
-The recommended preset compares `k_select` values 1, 2, and 5 with the
-baseline, shallow, medium, and flexible forests (12 runs):
+The recommended preset compares `k_select` values 1, 2, 5, and 10 with the
+baseline, shallow, medium, and flexible forests under both exact-set and
+feature-inclusion conditioning (32 runs per supplied dataset seed):
 
 ```powershell
 python examples/sweep_selection_region_settings.py 101 202 303 `
@@ -192,10 +299,12 @@ Settings can also be chosen explicitly:
 ```powershell
 python examples/sweep_selection_region_settings.py 101 202 303 `
     --k-select 2 5 `
-    --rf-config shallow flexible
+    --rf-config shallow flexible `
+    --selection-event exact_set feature_inclusion
 ```
 
-Each experiment is written below `outputs/selection_region_sweep/`, and a
+Each conditioning/top-k/forest experiment is written below
+`outputs/selection_region_sweep/`, and a
 combined `all_selection_regions.csv` records the experiment name and complete
 forest parameters.  These sweeps are computationally expensive because the
 forest is refitted at every selection-region grid point.

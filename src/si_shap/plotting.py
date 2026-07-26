@@ -166,7 +166,12 @@ def _plot_selection_region_on_axis(
             right,
             color="tab:green",
             alpha=0.13,
-            label=r"Selection region $\mathcal{Z}_j$"
+            label=(
+                "Feature-specific exact-set selection region"
+                if result.selection_event == "exact_set"
+                else f"Feature-specific {result.selection_event.replace('_', '-')} "
+                "selection region"
+            )
             if interval_number == 0
             else None,
         )
@@ -245,7 +250,9 @@ def _plot_selection_region_on_axis(
     )
     axis.set_title(
         f"Data set {result.dataset_number} (seed={result.seed}) | "
-        f"selected $x_{{{result.selected_feature}}}$\n"
+        f"target $x_{{{result.selected_feature}}}$, position "
+        f"{result.selection_position}/{result.k_select} | "
+        f"{result.selection_event.replace('_', '-')}\n"
         f"df={result.rank}, selection probability="
         f"{result.selection_probability:.4f}"
     )

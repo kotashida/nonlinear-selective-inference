@@ -7,13 +7,12 @@ import pandas as pd
 from scipy import stats
 from tqdm.auto import tqdm
 
-from .inference import TRUE_SIGMA, _chi_statistic, _run_ais, _spline_effect_basis
-from .selection import (
-    _resolve_rf_params,
-    _select_features,
-    _top_k,
-    _tree_shap_importance,
-)
+from .api import selective_inference
+from .inference import _chi_statistic, _spline_effect_basis
+from .selection import _resolve_rf_params, make_selector
+
+
+SIMULATION_SIGMA = 1.0
 
 
 def _generate_null_dataset(rng, n_samples, n_features):
@@ -96,6 +95,10 @@ def run_simulation(
     min_denominator_ess=80.0,
     min_tail_ess=15.0,
     rf_params=None,
+    estimator=None,
+    selector=None,
+    selection_event="exact_set",
+    multiplicity="none",
 ):
     """Run the global-null experiment documented in ``docs/``.
 
@@ -110,7 +113,15 @@ def run_simulation(
         raise ValueError("Final AIS sample counts must be positive.")
     if min_denominator_ess <= 0 or min_tail_ess <= 0:
         raise ValueError("AIS ESS thresholds must be positive.")
-    resolved_rf_params = _resolve_rf_params(rf_params)
+    if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
+        raise ValueError("Pass only one of rf_params, estimator, or selector.")
+    resolved_rf_params = _resolve_rf_params(rf_params) if estimator is None and selector is None else None
+    resolved_selector = make_selector(
+        estimator=estimator,
+        selector=selector,
+        selection_decimals=selection_decimals,
+        rf_params=resolved_rf_params,
+    )
 
     random_p_values = []
     unadjusted_p_values = []
@@ -127,10 +138,23 @@ def run_simulation(
 
         X, response = _generate_null_dataset(data_rng, n_samples, n_features)
 
-        shap_importance = _tree_shap_importance(
-            X, response, selection_decimals, rf_params=resolved_rf_params
+        inference_result = selective_inference(
+            X,
+            response,
+            k_select=k_select,
+            sigma=SIMULATION_SIGMA,
+            selector=resolved_selector,
+            selection_event=selection_event,
+            multiplicity=multiplicity,
+            ais_seed=int(ais_seed.generate_state(1, dtype=np.uint32)[0]),
+            pilot_iters=pilot_iters,
+            pilot_samples=pilot_samples,
+            final_batch_size=final_batch_size,
+            max_final_samples=max_final_samples,
+            min_denominator_ess=min_denominator_ess,
+            min_tail_ess=min_tail_ess,
         )
-        shap_selected = _top_k(shap_importance, k_select)
+        shap_selected = inference_result["observed_selected_features"]
         random_selected = random_selection_rng.choice(
             n_features, size=k_select, replace=False
         )
@@ -142,66 +166,12 @@ def run_simulation(
             random_iteration.append(stats.chi.sf(statistic, df=basis.shape[1]))
         random_p_values.append(np.asarray(random_iteration))
 
-        unadjusted_iteration = []
-        selective_iteration = []
-        feature_seeds = ais_seed.spawn(k_select)
-        for position, feature in enumerate(shap_selected):
-            basis = _spline_effect_basis(X[:, feature])
-            rank = basis.shape[1]
-            statistic, projected = _chi_statistic(response, basis)
-            unadjusted_iteration.append(stats.chi.sf(statistic, df=rank))
-
-            orthogonal = response - projected
-            projected_norm = np.linalg.norm(projected)
-            zero_tolerance = np.sqrt(np.finfo(float).eps) * max(
-                1.0, np.linalg.norm(response)
-            )
-            if projected_norm <= zero_tolerance:
-                raise FloatingPointError(
-                    "The observed effect direction is numerically undefined."
-                )
-            direction = projected / projected_norm
-
-            def is_selected(z):
-                candidate = orthogonal + TRUE_SIGMA * direction * z
-                selected = _select_features(
-                    X,
-                    candidate,
-                    k_select,
-                    selection_decimals,
-                    rf_params=resolved_rf_params,
-                )
-                return bool(feature in selected)
-
-            if not is_selected(statistic):
-                raise RuntimeError(
-                    "The observed response was not reconstructed inside its "
-                    "selection event."
-                )
-
-            p_value, diagnostics = _run_ais(
-                statistic,
-                rank,
-                is_selected,
-                np.random.default_rng(feature_seeds[position]),
-                pilot_iters=pilot_iters,
-                pilot_samples=pilot_samples,
-                final_batch_size=final_batch_size,
-                max_final_samples=max_final_samples,
-                min_denominator_ess=min_denominator_ess,
-                min_tail_ess=min_tail_ess,
-            )
-            diagnostics.update(
-                {
-                    "iteration": iteration,
-                    "feature": int(feature),
-                    "rank": rank,
-                    "t_obs": statistic,
-                    "p_value": p_value,
-                }
-            )
-            ais_diagnostics.append(diagnostics)
-            selective_iteration.append(p_value)
+        feature_results = inference_result["feature_results"].copy()
+        feature_results.insert(0, "iteration", iteration)
+        feature_results["rank"] = feature_results["test_rank"]
+        ais_diagnostics.extend(feature_results.to_dict(orient="records"))
+        unadjusted_iteration = feature_results["unadjusted_p_value"].to_numpy()
+        selective_iteration = feature_results["raw_selective_p_value"].to_numpy()
 
         unadjusted_p_values.append(np.asarray(unadjusted_iteration))
         selective_p_values.append(np.asarray(selective_iteration))
@@ -222,6 +192,8 @@ def run_simulation(
     summary = pd.DataFrame(
         [random_summary, unadjusted_summary, selective_summary]
     )
+    summary["selection_event"] = selection_event
+    summary["multiplicity"] = multiplicity
     diagnostics = pd.DataFrame(ais_diagnostics)
     return {
         "summary": summary,
@@ -239,6 +211,11 @@ def run_simulation(
             "k_select": k_select,
             "seed": seed,
             "selection_decimals": selection_decimals,
-            "rf_params": resolved_rf_params.copy(),
+            "rf_params": None if resolved_rf_params is None else resolved_rf_params.copy(),
+            "selection_event": selection_event,
+            "multiplicity": multiplicity,
+            "variance_method": "known_simulation_sigma",
+            "sigma": SIMULATION_SIGMA,
+            "selector_settings": dict(resolved_selector.get_settings()),
         },
     }
