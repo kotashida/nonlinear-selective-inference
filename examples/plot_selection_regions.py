@@ -43,6 +43,12 @@ def parse_args(argv=None):
         help="number of top-SHAP features to select per data set (default: 1)",
     )
     parser.add_argument(
+        "--selection-event",
+        choices=("exact_set", "feature_inclusion", "exact_ranking"),
+        default="exact_set",
+        help="conditioning event used for every feature-specific path",
+    )
+    parser.add_argument(
         "--rf-param",
         action="append",
         default=[],
@@ -72,6 +78,7 @@ def main():
         boundary_tol=1e-8,
         tail_probability=1e-8,
         rf_params=rf_params,
+        selection_event=args.selection_event,
     )
     summary = selection_regions_frame(results)
     summary.to_csv(output_directory / "shap_selection_regions.csv", index=False)

@@ -10,7 +10,6 @@ import pandas as pd
 from scipy import stats
 
 from .inference import (
-    TRUE_SIGMA,
     _adapt_proposal,
     _chi_statistic,
     _spline_effect_basis,
@@ -18,8 +17,15 @@ from .inference import (
 from .selection import (
     _resolve_rf_params,
     _select_features,
+    _validate_selection_event,
+    make_selector,
+    selection_event_definition,
+    selection_event_holds,
 )
 from .simulation import _generate_null_dataset
+
+
+SIMULATION_SIGMA = 1.0
 
 
 @dataclass(frozen=True)
@@ -41,6 +47,9 @@ class SelectionRegionResult:
     adaptation_seed: int
     selection_position: int = 1
     k_select: int = 1
+    selection_event: str = "exact_set"
+    selection_event_definition: str = ""
+    observed_selected_features: tuple[int, ...] = ()
 
 
 def _refine_transition(
@@ -144,14 +153,17 @@ def compute_selection_regions(
     proposal_pilot_iters: int = 3,
     proposal_pilot_samples: int = 40,
     rf_params=None,
+    estimator=None,
+    selector=None,
+    selection_event: str = "exact_set",
 ) -> list[SelectionRegionResult]:
     """Generate null data sets and compute top-k SHAP selection regions.
 
     ``dataset_seeds`` is required so callers choose the generated data sets at
     runtime rather than implicitly relying on a package-level seed sequence.
 
-    One result is returned for every feature in the observed top-k set.  Each
-    region conditions on that feature remaining included in the top-k set.
+    One result is returned for every feature in the observed top-k set. The
+    default event conditions on equality of the unordered observed top-k set.
 
     For each selected feature, the observed response is decomposed as
     ``y = y_perp + sigma * direction * T_obs``.  Feature selection is then
@@ -179,20 +191,36 @@ def compute_selection_regions(
             "proposal_pilot_iters must be nonnegative and "
             "proposal_pilot_samples positive."
         )
+    _validate_selection_event(selection_event)
+    if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
+        raise ValueError("Pass only one of rf_params, estimator, or selector.")
     resolved_rf_params = _resolve_rf_params(rf_params)
+    resolved_selector = None
+    if estimator is not None or selector is not None:
+        resolved_selector = make_selector(
+            estimator=estimator,
+            selector=selector,
+            selection_decimals=selection_decimals,
+        )
 
-    results: list[SelectionRegionResult] = []
-    for dataset_number, seed in enumerate(seeds, start=1):
-        rng = np.random.default_rng(seed)
-        X, response = _generate_null_dataset(rng, n_samples, n_features)
-
-        selected_features = _select_features(
+    def select_response(X, response):
+        if resolved_selector is not None:
+            return resolved_selector.select(X, response, k_select).selected_features
+        return _select_features(
             X,
             response,
             k_select,
             selection_decimals,
             rf_params=resolved_rf_params,
         )
+
+    results: list[SelectionRegionResult] = []
+    for dataset_number, seed in enumerate(seeds, start=1):
+        rng = np.random.default_rng(seed)
+        X, response = _generate_null_dataset(rng, n_samples, n_features)
+
+        selected_features = select_response(X, response)
+        observed_selected = tuple(int(value) for value in selected_features)
         for selection_position, selected_feature in enumerate(selected_features, start=1):
             feature = int(selected_feature)
             basis = _spline_effect_basis(X[:, feature])
@@ -215,15 +243,14 @@ def compute_selection_regions(
             def is_selected(z: float) -> bool:
                 z = float(z)
                 if z not in cache:
-                    candidate = orthogonal + TRUE_SIGMA * direction * z
-                    selected = _select_features(
-                        X,
-                        candidate,
-                        k_select=k_select,
-                        selection_decimals=selection_decimals,
-                        rf_params=resolved_rf_params,
+                    candidate = orthogonal + SIMULATION_SIGMA * direction * z
+                    selected = select_response(X, candidate)
+                    cache[z] = selection_event_holds(
+                        selected,
+                        observed_selected,
+                        feature,
+                        selection_event,
                     )
-                    cache[z] = bool(feature in selected)
                 return cache[z]
 
             if not is_selected(t_obs):
@@ -270,6 +297,11 @@ def compute_selection_regions(
                     adaptation_seed=adaptation_seed,
                     selection_position=selection_position,
                     k_select=k_select,
+                    selection_event=selection_event,
+                    selection_event_definition=selection_event_definition(
+                        selection_event, feature
+                    ),
+                    observed_selected_features=observed_selected,
                 )
             )
     return results

@@ -8,7 +8,6 @@ from scipy import stats
 from scipy.special import logsumexp
 
 
-TRUE_SIGMA = 1.0
 DEFENSIVE_MIXTURE_WEIGHTS = (0.25, 0.375, 0.375)
 
 
@@ -32,7 +31,7 @@ def _spline_effect_basis(x):
     return left[:, :rank]
 
 
-def _chi_statistic(response, basis, sigma=TRUE_SIGMA):
+def _chi_statistic(response, basis, sigma=1.0):
     coordinates = basis.T @ response
     projected = basis @ coordinates
     statistic = np.linalg.norm(coordinates) / sigma

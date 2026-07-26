@@ -1,7 +1,14 @@
 import numpy as np
 import pytest
+from sklearn.ensemble import RandomForestRegressor
 
-from si_shap.selection import RF_PARAMS, _resolve_rf_params, _top_k
+from si_shap.selection import (
+    RF_PARAMS,
+    _resolve_rf_params,
+    _top_k,
+    ShapSelector,
+    selection_event_holds,
+)
 
 
 def test_top_k_breaks_ties_by_feature_index():
@@ -38,3 +45,26 @@ def test_rf_params_override_defaults_without_mutating_inputs():
 def test_rf_params_must_be_a_mapping():
     with pytest.raises(TypeError, match="mapping or None"):
         _resolve_rf_params([("n_estimators", 12)])
+
+
+def test_exact_set_rejects_replacement_while_inclusion_accepts_it():
+    observed = np.array([2, 5])
+    candidate = np.array([2, 7])
+
+    assert not selection_event_holds(candidate, observed, 2, "exact_set")
+    assert selection_event_holds(candidate, observed, 2, "feature_inclusion")
+
+
+def test_exact_set_is_unordered_but_exact_ranking_is_ordered():
+    observed = np.array([2, 5])
+    reversed_candidate = np.array([5, 2])
+
+    assert selection_event_holds(reversed_candidate, observed, 2, "exact_set")
+    assert not selection_event_holds(
+        reversed_candidate, observed, 2, "exact_ranking"
+    )
+
+
+def test_stochastic_estimator_requires_fixed_random_state():
+    with pytest.raises(ValueError, match="random_state"):
+        ShapSelector(RandomForestRegressor(random_state=None))

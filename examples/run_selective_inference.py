@@ -39,6 +39,16 @@ def parse_args(argv=None):
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--selection-decimals", type=int, default=10)
+    parser.add_argument(
+        "--selection-event",
+        choices=("exact_set", "feature_inclusion", "exact_ranking"),
+        default="exact_set",
+    )
+    parser.add_argument(
+        "--multiplicity",
+        choices=("none", "holm", "bonferroni"),
+        default="none",
+    )
     parser.add_argument("--pilot-iters", type=int, default=3)
     parser.add_argument("--pilot-samples", type=int, default=40)
     parser.add_argument("--final-batch-size", type=int, default=80)
@@ -90,6 +100,8 @@ def main(argv=None):
         min_denominator_ess=args.min_denominator_ess,
         min_tail_ess=args.min_tail_ess,
         rf_params=rf_params,
+        selection_event=args.selection_event,
+        multiplicity=args.multiplicity,
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -111,6 +123,8 @@ def main(argv=None):
                 "max_final_samples": args.max_final_samples,
                 "min_denominator_ess": args.min_denominator_ess,
                 "min_tail_ess": args.min_tail_ess,
+                "selection_event": args.selection_event,
+                "multiplicity": args.multiplicity,
             },
             file,
             indent=2,
