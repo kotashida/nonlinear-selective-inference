@@ -7,3 +7,9 @@
 *.toc
 *.synctex.gz
 *.synctex(busy)
+
+# Local presentation exports and rendered slide previews
+/*.pdf
+/*.mp4
+/slide*.png
+/revised-slide*.png
