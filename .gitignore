@@ -1,9 +1,11 @@
 __pycache__/
+.agents/
 *.py[cod]
 .ipynb_checkpoints/
 .venv/
 .pytest_cache/
 .vscode/
+/docs/
 /Microsoft/
 /outputs/
 /presentation/
