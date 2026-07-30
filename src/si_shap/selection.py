@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, runtime_checkable
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["POLARS_MAX_THREADS"] = "1"
 
 import numpy as np
 import shap
@@ -12,7 +20,13 @@ from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
 
 
-RF_PARAMS = {"n_estimators": 50, "max_depth": 5, "random_state": 42}
+MAX_CPU_CORES = 32
+RF_PARAMS = {
+    "n_estimators": 50,
+    "max_depth": 5,
+    "random_state": 42,
+    "n_jobs": MAX_CPU_CORES,
+}
 SelectionEvent = Literal[
     "exact_set", "feature_inclusion", "same_target", "exact_ranking"
 ]
@@ -47,7 +61,21 @@ def _resolve_rf_params(rf_params: Mapping[str, Any] | None) -> dict[str, Any]:
     """Return forest parameters with user overrides applied to the defaults."""
     if rf_params is not None and not isinstance(rf_params, Mapping):
         raise TypeError("rf_params must be a mapping or None.")
-    return {**RF_PARAMS, **({} if rf_params is None else rf_params)}
+    resolved = {**RF_PARAMS, **({} if rf_params is None else rf_params)}
+    _validate_n_jobs(resolved.get("n_jobs"))
+    return resolved
+
+
+def _validate_n_jobs(n_jobs) -> None:
+    """Allow serial execution or at most the lab's allocated CPU count."""
+    if n_jobs is None:
+        return
+    if (
+        isinstance(n_jobs, (bool, np.bool_))
+        or not isinstance(n_jobs, (int, np.integer))
+        or not 1 <= n_jobs <= MAX_CPU_CORES
+    ):
+        raise ValueError(f"n_jobs must be an integer from 1 to {MAX_CPU_CORES}.")
 
 
 def _top_k(scores, k):
@@ -203,6 +231,9 @@ class ShapSelector:
         if estimator is None:
             estimator = RandomForestRegressor(**RF_PARAMS)
         _check_estimator_reproducibility(estimator)
+        estimator_params = estimator.get_params(deep=False)
+        if "n_jobs" in estimator_params:
+            _validate_n_jobs(estimator_params["n_jobs"])
         self.estimator = clone(estimator)
         self.selection_decimals = selection_decimals
 
