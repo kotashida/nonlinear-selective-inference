@@ -39,7 +39,7 @@ def _data():
 def test_public_api_returns_k_featurewise_results_and_reproduces_t_obs(monkeypatch):
     checked = []
 
-    def fake_ais(t_obs, rank, is_selected, rng, **kwargs):
+    def fake_mc(t_obs, rank, is_selected, rng, **kwargs):
         checked.append(is_selected(t_obs))
         return 0.25, {
             "status": "ok",
@@ -49,9 +49,11 @@ def test_public_api_returns_k_featurewise_results_and_reproduces_t_obs(monkeypat
             "denominator_ess": 100.0,
             "tail_ess": 25.0,
             "mc_se": 0.02,
+            "p_value_method": "conditional_monte_carlo_rank",
+            "finite_sample_valid": True,
         }
 
-    monkeypatch.setattr("si_shap.api._run_ais", fake_ais)
+    monkeypatch.setattr("si_shap.api._run_conditional_mc", fake_mc)
     X, y = _data()
     with pytest.warns(UserWarning, match="Exact-set"):
         result = selective_inference(
@@ -68,6 +70,8 @@ def test_public_api_returns_k_featurewise_results_and_reproduces_t_obs(monkeypat
     assert set(result["feature_results"]["selection_event"]) == {"exact_set"}
     assert result["settings"]["variance_method"] == "known_user_supplied"
     assert result["settings"]["sigma"] == 1.5
+    assert result["settings"]["inference_method"] == "conditional_mc"
+    assert result["feature_results"]["finite_sample_valid"].all()
 
 
 @pytest.mark.parametrize(
@@ -95,7 +99,7 @@ def test_public_api_requires_known_sigma():
 
 def test_public_api_rejects_boolean_seed_and_noninteger_sample_counts():
     X, y = _data()
-    with pytest.raises(TypeError, match="ais_seed"):
+    with pytest.raises(ValueError, match="ais_seed"):
         selective_inference(
             X,
             y,
@@ -145,4 +149,74 @@ def test_holm_is_rejected_for_feature_inclusion_event():
             selector=FixedSelector(),
             selection_event="feature_inclusion",
             multiplicity="holm",
+        )
+
+
+def test_uniform_target_mode_tests_one_reproducible_feature(monkeypatch):
+    monkeypatch.setattr(
+        "si_shap.api._run_conditional_mc",
+        lambda t_obs, rank, is_selected, rng, **kwargs: (
+            0.25,
+            {"status": "ok", "denominator_ess": 10.0, "tail_ess": 5.0},
+        ),
+    )
+    X, y = _data()
+    result = selective_inference(
+        X,
+        y,
+        k_select=2,
+        sigma=1.0,
+        selector=FixedSelector(),
+        selection_event="same_target",
+        target_rule="uniform_from_selected",
+        auxiliary_u=0.75,
+        target_feature=1,
+    )
+
+    assert result["observed_target_feature"] == 1
+    assert result["auxiliary_u"] == 0.75
+    assert result["feature_results"]["feature"].tolist() == [1]
+
+
+def test_same_target_requires_uniform_target_rule():
+    X, y = _data()
+    with pytest.raises(ValueError, match="same_target requires"):
+        selective_inference(
+            X, y, k_select=2, sigma=1.0, selector=FixedSelector(),
+            selection_event="same_target"
+        )
+
+
+@pytest.mark.parametrize(
+    ("keyword", "value"),
+    [
+        ("ais_seed", -1),
+        ("target_seed", -1),
+        ("min_denominator_ess", np.nan),
+        ("min_tail_ess", np.inf),
+    ],
+)
+def test_public_api_rejects_invalid_randomness_and_diagnostics(keyword, value):
+    X, y = _data()
+    with pytest.raises(ValueError):
+        selective_inference(
+            X,
+            y,
+            k_select=1,
+            sigma=1.0,
+            selector=FixedSelector(),
+            **{keyword: value},
+        )
+
+
+def test_early_stopping_is_restricted_to_exploratory_ais():
+    X, y = _data()
+    with pytest.raises(ValueError, match="exploratory AIS"):
+        selective_inference(
+            X,
+            y,
+            k_select=1,
+            sigma=1.0,
+            selector=FixedSelector(),
+            stop_when_ess_met=True,
         )

@@ -28,6 +28,9 @@ from si_shap import (
 )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 RF_CONFIGS = {
     "baseline": {
         "n_estimators": 50,
@@ -99,7 +102,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--selection-event",
-        choices=("exact_set", "feature_inclusion", "exact_ranking"),
+        choices=("exact_set", "feature_inclusion", "same_target", "exact_ranking"),
         nargs="+",
         help="conditioning modes; overrides the selected preset",
     )
@@ -124,7 +127,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("outputs") / "selection_region_sweep",
+        default=PROJECT_ROOT / "outputs" / "selection_region_sweep",
         help="root directory for sweep results",
     )
     return parser.parse_args(argv)
@@ -167,6 +170,11 @@ def run_experiment(args, k_select, rf_name, selection_event):
         tail_probability=1e-8,
         rf_params=rf_params,
         selection_event=selection_event,
+        target_rule=(
+            "uniform_from_selected"
+            if selection_event == "same_target"
+            else "all_selected"
+        ),
     )
 
     summary = selection_regions_frame(results)

@@ -26,8 +26,6 @@ from si_shap import compare_selection_event_power
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "selection_event_power"
-MIN_FALLBACK_COMPLETE_ITERATIONS = 20
-MIN_FALLBACK_COMPLETE_FRACTION = 0.5
 PRESETS = {
     "quick": {
         "n_iters": 10,
@@ -142,13 +140,18 @@ def parse_args(argv=None):
     parser.add_argument(
         "--selection-events",
         nargs="+",
-        choices=("exact_set", "feature_inclusion", "exact_ranking"),
-        default=["exact_set", "feature_inclusion"],
+        choices=("feature_inclusion", "exact_set", "same_target", "exact_ranking"),
+        default=["feature_inclusion", "exact_set", "same_target"],
     )
     parser.add_argument(
         "--multiplicity",
         choices=("none", "holm", "bonferroni"),
         default="none",
+    )
+    parser.add_argument(
+        "--inference-method",
+        choices=("conditional_mc", "ais"),
+        default="conditional_mc",
     )
     parser.add_argument("--pilot-iters", type=int, default=3)
     parser.add_argument(
@@ -160,7 +163,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--max-final-samples",
         type=int,
-        help="maximum final AIS proposals per selected-feature test",
+        help="fixed Monte Carlo proposal budget per selected-feature test",
     )
     parser.add_argument("--min-denominator-ess", type=float, default=80.0)
     parser.add_argument("--min-tail-ess", type=float, default=15.0)
@@ -193,31 +196,20 @@ def parse_args(argv=None):
 
 
 def _power_plot_data(summary):
-    """Return guarded values and diagnostics used by the power plot."""
+    """Return strict values; converged-only subsets are never promoted."""
     strict = summary["power"].to_numpy(dtype=float)
-    converged = summary["converged_power"].to_numpy(dtype=float)
     n_complete = summary["n_complete_iterations"].to_numpy(dtype=int)
     n_iterations = summary["n_iterations"].to_numpy(dtype=int)
-    minimum_complete = np.maximum(
-        MIN_FALLBACK_COMPLETE_ITERATIONS,
-        np.ceil(MIN_FALLBACK_COMPLETE_FRACTION * n_iterations).astype(int),
-    )
-    fallback_used = (
-        ~np.isfinite(strict)
-        & np.isfinite(converged)
-        & (n_complete >= minimum_complete)
-    )
     values = np.where(np.isfinite(strict), strict, np.nan)
-    values = np.where(fallback_used, converged, values)
     errors = summary["converged_simulation_se"].to_numpy(dtype=float)
     errors = np.where(np.isfinite(values) & np.isfinite(errors), errors, 0.0)
-    return values, errors, fallback_used, n_complete, n_iterations
+    return values, errors, n_complete, n_iterations
 
 
 def _plot_power_comparison(result, output_path):
-    """Save power estimates without promoting tiny complete-case subsets."""
+    """Save strict power estimates without promoting complete-case subsets."""
     summary = result["summary"]
-    values, errors, fallback_used, n_complete, n_iterations = _power_plot_data(
+    values, errors, n_complete, n_iterations = _power_plot_data(
         summary
     )
     plotted_values = np.where(np.isfinite(values), values, 0.0)
@@ -231,18 +223,15 @@ def _plot_power_comparison(result, output_path):
         color=("tab:blue", "tab:green", "tab:orange")[: len(summary)],
         alpha=0.8,
     )
-    for bar, value, plotted_value, used_fallback, complete, total in zip(
+    for bar, value, plotted_value, complete, total in zip(
         bars,
         values,
         plotted_values,
-        fallback_used,
         n_complete,
         n_iterations,
     ):
         if np.isfinite(value):
             label = f"{value:.3f}"
-            if used_fallback:
-                label += f"*\n({complete}/{total} complete)"
         else:
             label = f"NA\n({complete}/{total} complete)"
         label_inside_top = plotted_value >= 0.95
@@ -262,16 +251,8 @@ def _plot_power_comparison(result, output_path):
     axis.set_title(
         "Paired comparison of SHAP selection-conditioning events", pad=12
     )
-    if np.any(fallback_used):
-        figure.text(
-            0.5,
-            0.01,
-            "* converged iterations only; complete-case count shown",
-            ha="center",
-            fontsize=9,
-        )
     axis.grid(axis="y", linestyle=":", alpha=0.5)
-    figure.tight_layout(rect=(0.0, 0.04, 1.0, 1.0))
+    figure.tight_layout()
     figure.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(figure)
 
@@ -339,14 +320,15 @@ def _write_results_to_directory(result, output_dir):
     )
     backup_dir = None
     try:
-        if output_dir.exists():
-            shutil.copytree(output_dir, staging_dir, dirs_exist_ok=True)
         result["summary"].to_csv(staging_dir / "power_summary.csv", index=False)
         result["comparisons"].to_csv(
             staging_dir / "paired_power_comparison.csv", index=False
         )
         result["signal_results"].to_csv(
             staging_dir / "signal_results.csv", index=False
+        )
+        result.get("target_results", result["signal_results"]).to_csv(
+            staging_dir / "target_results.csv", index=False
         )
         result["feature_results"].to_csv(
             staging_dir / "feature_results.csv", index=False
@@ -405,6 +387,7 @@ def main(argv=None):
         min_tail_ess=args.min_tail_ess,
         rf_params=rf_params,
         multiplicity=args.multiplicity,
+        inference_method=args.inference_method,
         stop_when_ess_met=args.stop_when_ess_met,
     )
     result["settings"]["run_preset"] = args.preset
@@ -416,13 +399,13 @@ def main(argv=None):
         "power",
         "simulation_se",
         "converged_power",
-        "conditional_power",
-        "signal_selection_rate",
-        "signal_test_failure_rate",
+        "conditional_power_given_signal_target",
+        "target_signal_rate",
+        "signal_target_test_failure_rate",
         "n_complete_iterations",
         "n_iterations",
-        "n_converged_signal_tests",
-        "n_selected_signal_tests",
+        "n_converged_signal_targets",
+        "n_signal_targets",
     ]
     print("\nSelection-event power comparison:")
     print(result["summary"][display_columns].to_string(index=False))

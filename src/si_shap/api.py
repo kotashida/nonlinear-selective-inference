@@ -8,14 +8,21 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .inference import _chi_statistic, _run_ais, _spline_effect_basis
+from .inference import (
+    _chi_statistic,
+    _run_ais,
+    _run_conditional_mc,
+    _spline_effect_basis,
+)
 from .selection import (
     SelectionResult,
     ShapSelector,
     _validate_selection_event,
+    _validate_target_rule,
     make_selector,
     selection_event_definition,
     selection_event_holds,
+    target_from_selected_set,
 )
 
 
@@ -26,7 +33,8 @@ HYPOTHESIS = (
 )
 ASSUMPTIONS = (
     "X is fixed; errors are independent N(0, sigma^2); sigma is known and supplied; "
-    "the selector, its tie-breaking rule, and all estimator randomness are fixed."
+    "all preprocessing, tuning, k selection, selector rules, tie-breaking, and "
+    "estimator randomness are fixed or included in the conditioned selection map."
 )
 
 
@@ -125,7 +133,12 @@ def selective_inference(
     estimator=None,
     selector=None,
     selection_event: str = "exact_set",
+    target_rule: str = "all_selected",
+    target_seed: int = 123,
+    auxiliary_u: float | None = None,
+    target_feature: int | None = None,
     multiplicity: str = "none",
+    inference_method: str = "conditional_mc",
     selection_decimals: int = 10,
     ais_seed: int = 123,
     pilot_iters: int = 3,
@@ -141,16 +154,31 @@ def selective_inference(
 
     The default event is equality of the unordered observed top-k set. Each
     selected feature still has its own response path and therefore its own test.
+    Set ``target_rule='uniform_from_selected'`` to test one feature chosen by a
+    fixed auxiliary draw; ``same_target`` then conditions on reproduction of
+    the complete selector-to-target algorithm's output.
     ``sigma`` must be externally supplied and known under the stated model.
-    The default consumes the full final AIS budget; ESS early stopping is an
-    explicitly exploratory option. Custom selectors are checked on repeated
-    identical inputs unless ``verify_selector_determinism=False`` is requested.
+    The default ``conditional_mc`` method returns a finite-sample-valid,
+    conservative conditional Monte Carlo rank p-value. ``inference_method='ais'``
+    retains the self-normalized importance-sampling estimate for exploratory
+    work, but that estimate is not an exact finite-sample p-value. Custom
+    selectors are checked on repeated identical inputs unless
+    ``verify_selector_determinism=False`` is requested.
     """
     X, y, k_select, sigma = _validate_data(X, y, k_select, sigma)
     _validate_selection_event(selection_event)
+    _validate_target_rule(target_rule)
+    if selection_event == "same_target" and target_rule != "uniform_from_selected":
+        raise ValueError("same_target requires target_rule='uniform_from_selected'.")
     if multiplicity not in {"none", "bonferroni", "holm"}:
         raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
-    if selection_event == "feature_inclusion" and multiplicity == "holm":
+    if inference_method not in {"conditional_mc", "ais"}:
+        raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
+    if (
+        selection_event == "feature_inclusion"
+        and multiplicity == "holm"
+        and target_rule == "all_selected"
+    ):
         raise ValueError(
             "Holm adjustment is not implemented for feature_inclusion because "
             "the featurewise p-values condition on different inclusion events. "
@@ -170,14 +198,31 @@ def selective_inference(
         raise ValueError("pilot_iters must be nonnegative and pilot_samples positive.")
     if final_batch_size < 1 or max_final_samples < 1:
         raise ValueError("Final AIS sample counts must be positive.")
-    if min_denominator_ess <= 0 or min_tail_ess <= 0:
-        raise ValueError("AIS ESS thresholds must be positive.")
-    if isinstance(ais_seed, (bool, np.bool_)) or not isinstance(
-        ais_seed, (int, np.integer)
+    for name, value in {
+        "min_denominator_ess": min_denominator_ess,
+        "min_tail_ess": min_tail_ess,
+    }.items():
+        if not np.isscalar(value) or not np.isfinite(value) or value <= 0:
+            raise ValueError(f"{name} must be finite and positive.")
+    if (
+        isinstance(ais_seed, (bool, np.bool_))
+        or not isinstance(ais_seed, (int, np.integer))
+        or ais_seed < 0
     ):
-        raise TypeError("ais_seed must be an integer.")
+        raise ValueError("ais_seed must be a nonnegative integer.")
+    if (
+        isinstance(target_seed, (bool, np.bool_))
+        or not isinstance(target_seed, (int, np.integer))
+        or target_seed < 0
+    ):
+        raise ValueError("target_seed must be a nonnegative integer.")
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
+    if inference_method == "conditional_mc" and stop_when_ess_met:
+        raise ValueError(
+            "stop_when_ess_met is available only for exploratory AIS; "
+            "conditional_mc always uses its fixed proposal budget."
+        )
     if not isinstance(verify_selector_determinism, (bool, np.bool_)):
         raise TypeError("verify_selector_determinism must be boolean.")
 
@@ -195,25 +240,54 @@ def selective_inference(
             resolved_selector.select(X, response, k_select), X.shape[1], k_select
         )
         if check_repeated_calls:
-            second = _validate_selection_result(
-                resolved_selector.select(X, response, k_select),
-                X.shape[1],
-                k_select,
-            )
-            if not (
-                np.array_equal(first.selected_features, second.selected_features)
-                and np.array_equal(first.ranking, second.ranking)
-                and np.array_equal(first.importance, second.importance)
-            ):
-                raise ValueError(
-                    "Custom selector is not deterministic for repeated identical "
-                    "inputs. Fix and condition on its randomness before selective "
-                    "inference."
+            for _ in range(2):
+                repeated = _validate_selection_result(
+                    resolved_selector.select(X, response, k_select),
+                    X.shape[1],
+                    k_select,
                 )
+                if not (
+                    np.array_equal(first.selected_features, repeated.selected_features)
+                    and np.array_equal(first.ranking, repeated.ranking)
+                    and np.array_equal(first.importance, repeated.importance)
+                ):
+                    raise ValueError(
+                        "Custom selector is not deterministic for repeated identical "
+                        "inputs. Fix and condition on its randomness before selective "
+                        "inference."
+                    )
         return first
 
     observed = select_response(y)
     observed_selected = tuple(int(feature) for feature in observed.selected_features)
+    realized_u = None
+    observed_target = None
+    if target_rule == "uniform_from_selected":
+        if target_feature is not None and (
+            isinstance(target_feature, (bool, np.bool_))
+            or not isinstance(target_feature, (int, np.integer))
+        ):
+            raise TypeError("target_feature must be an integer or None.")
+        realized_u = (
+            float(np.random.default_rng(int(target_seed)).random())
+            if auxiliary_u is None
+            else float(auxiliary_u)
+        )
+        computed_target = target_from_selected_set(observed_selected, realized_u)
+        if target_feature is not None and int(target_feature) != computed_target:
+            raise ValueError(
+                "target_feature does not equal the target induced by observed "
+                "selection and auxiliary_u."
+            )
+        observed_target = computed_target
+        tested_features = (computed_target,)
+    else:
+        if auxiliary_u is not None or target_feature is not None:
+            raise ValueError(
+                "auxiliary_u and target_feature require "
+                "target_rule='uniform_from_selected'."
+            )
+        tested_features = observed_selected
     rank_by_feature = np.empty(X.shape[1], dtype=int)
     rank_by_feature[observed.ranking] = np.arange(1, X.shape[1] + 1)
     importance_table = pd.DataFrame(
@@ -227,17 +301,22 @@ def selective_inference(
     importance_table["selection_event"] = selection_event
 
     if selection_event == "exact_set":
-        warnings.warn(
-            "Exact-set conditioning can make the event rare; interpret only rows "
-            "with status='ok' and inspect denominator/tail ESS and Monte Carlo SE.",
-            UserWarning,
-            stacklevel=2,
+        message = (
+            "Exact-set conditioning can make the event rare. Conditional Monte "
+            "Carlo remains finite-sample valid but can be conservative when few "
+            "draws reproduce selection; inspect selected_samples."
+            if inference_method == "conditional_mc"
+            else
+            "Exact-set conditioning can make the event rare; exploratory AIS rows "
+            "are estimates only and require ESS/Monte Carlo diagnostics."
         )
+        warnings.warn(message, UserWarning, stacklevel=2)
 
-    feature_seeds = np.random.SeedSequence(int(ais_seed)).spawn(k_select)
+    feature_seeds = np.random.SeedSequence(int(ais_seed)).spawn(len(tested_features))
     rows = []
-    for position, feature in enumerate(observed.selected_features, start=1):
+    for test_index, feature in enumerate(tested_features):
         feature = int(feature)
+        position = int(rank_by_feature[feature])
         basis = _spline_effect_basis(X[:, feature])
         test_rank = int(basis.shape[1])
         t_obs, projected = _chi_statistic(y, basis, sigma=sigma)
@@ -263,6 +342,9 @@ def selective_inference(
                     observed_selected,
                     feature,
                     selection_event,
+                    auxiliary_u=realized_u,
+                    ranking=candidate_result.ranking,
+                    observed_ranking=observed.ranking,
                 )
             return cache[z]
 
@@ -271,19 +353,30 @@ def selective_inference(
                 "z=T_obs did not reproduce the observed selection event for "
                 f"feature {feature}."
             )
-        p_value, diagnostics = _run_ais(
-            t_obs,
-            test_rank,
-            is_selected,
-            np.random.default_rng(feature_seeds[position - 1]),
-            pilot_iters=pilot_iters,
-            pilot_samples=pilot_samples,
-            final_batch_size=final_batch_size,
-            max_final_samples=max_final_samples,
-            min_denominator_ess=min_denominator_ess,
-            min_tail_ess=min_tail_ess,
-            stop_when_ess_met=bool(stop_when_ess_met),
-        )
+        feature_rng = np.random.default_rng(feature_seeds[test_index])
+        if inference_method == "conditional_mc":
+            p_value, diagnostics = _run_conditional_mc(
+                t_obs,
+                test_rank,
+                is_selected,
+                feature_rng,
+                batch_size=final_batch_size,
+                n_proposals=max_final_samples,
+            )
+        else:
+            p_value, diagnostics = _run_ais(
+                t_obs,
+                test_rank,
+                is_selected,
+                feature_rng,
+                pilot_iters=pilot_iters,
+                pilot_samples=pilot_samples,
+                final_batch_size=final_batch_size,
+                max_final_samples=max_final_samples,
+                min_denominator_ess=min_denominator_ess,
+                min_tail_ess=min_tail_ess,
+                stop_when_ess_met=bool(stop_when_ess_met),
+            )
         rows.append(
             {
                 "feature": feature,
@@ -295,6 +388,8 @@ def selective_inference(
                 "unadjusted_p_value": float(stats.chi.sf(t_obs, df=test_rank)),
                 "raw_selective_p_value": p_value,
                 "selection_event": selection_event,
+                "target_rule": target_rule,
+                "auxiliary_u": realized_u,
                 "selection_event_definition": selection_event_definition(
                     selection_event, feature
                 ),
@@ -319,9 +414,16 @@ def selective_inference(
         "k_select": k_select,
         "sigma": sigma,
         "variance_method": "known_user_supplied",
+        "effect_confidence_intervals_implemented": False,
         "selection_event": selection_event,
+        "target_rule": target_rule,
+        "target_seed": int(target_seed),
+        "auxiliary_u": realized_u,
+        "observed_target_feature": observed_target,
         "multiplicity": multiplicity,
+        "inference_method": inference_method,
         "ais_seed": int(ais_seed),
+        "monte_carlo_seed": int(ais_seed),
         "pilot_iters": pilot_iters,
         "pilot_samples": pilot_samples,
         "final_batch_size": final_batch_size,
@@ -330,6 +432,7 @@ def selective_inference(
         "min_tail_ess": min_tail_ess,
         "stop_when_ess_met": bool(stop_when_ess_met),
         "verify_selector_determinism": bool(verify_selector_determinism),
+        "determinism_check_repetitions": 3 if check_repeated_calls else 1,
         **selector_settings,
     }
     return {
@@ -338,9 +441,14 @@ def selective_inference(
         "shap_ranking": observed.ranking.copy(),
         "importance_table": importance_table,
         "feature_results": feature_results,
+        "inference_diagnostics": feature_results.copy(),
         "ais_diagnostics": feature_results.copy(),
         "selection_event": selection_event,
+        "target_rule": target_rule,
+        "observed_target_feature": observed_target,
+        "auxiliary_u": realized_u,
         "hypothesis": HYPOTHESIS,
         "assumptions": ASSUMPTIONS,
+        "effect_confidence_intervals_implemented": False,
         "settings": settings,
     }

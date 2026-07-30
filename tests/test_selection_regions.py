@@ -28,9 +28,9 @@ def test_compute_selection_regions_returns_each_top_k_feature(monkeypatch):
     received_rf_params = []
     monkeypatch.setattr(
         selection_regions,
-        "_select_features",
-        lambda X, response, k_select, selection_decimals, rf_params: (
-            received_rf_params.append(rf_params) or np.array([1, 2])
+        "_tree_shap_importance",
+        lambda X, response, selection_decimals, rf_params: (
+            received_rf_params.append(rf_params) or np.array([1.0, 3.0, 2.0])
         ),
     )
     monkeypatch.setattr(
@@ -62,9 +62,26 @@ def test_compute_selection_regions_returns_each_top_k_feature(monkeypatch):
         for result in results
     )
     assert all(result.relative_omitted_tail_bound >= 0.0 for result in results)
+    assert all(result.regions_certified is False for result in results)
     assert received_rf_params
     assert all(params["n_estimators"] == 12 for params in received_rf_params)
     assert all(params["max_depth"] == 5 for params in received_rf_params)
+
+    target_results = selection_regions.compute_selection_regions(
+        dataset_seeds=[101],
+        n_samples=10,
+        n_features=3,
+        k_select=2,
+        selection_event="same_target",
+        target_rule="uniform_from_selected",
+        target_seed=17,
+    )
+    assert len(target_results) == 1
+    assert target_results[0].observed_target_feature in {1, 2}
+    assert target_results[0].selected_feature == (
+        target_results[0].observed_target_feature
+    )
+    assert 0.0 <= target_results[0].auxiliary_u < 1.0
 
 
 def test_find_selection_intervals_refines_detected_boundaries():

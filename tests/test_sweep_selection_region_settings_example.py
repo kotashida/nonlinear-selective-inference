@@ -74,6 +74,7 @@ def test_run_experiment_recreates_output_directory_before_saving(
 
     assert (experiment_directory / "selection_regions.csv").is_file()
     assert received["selection_event"] == "exact_set"
+    assert received["target_rule"] == "all_selected"
 
 
 def test_conditioning_modes_use_distinct_output_directories(monkeypatch, tmp_path):

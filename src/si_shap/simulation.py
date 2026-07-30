@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -9,10 +11,26 @@ from tqdm.auto import tqdm
 
 from .api import adjust_p_values, selective_inference
 from .inference import _chi_statistic, _spline_effect_basis
-from .selection import _resolve_rf_params, make_selector
+from .selection import _resolve_rf_params, _validate_selection_event, make_selector
 
 
 SIMULATION_SIGMA = 1.0
+
+
+def _validate_seed(name, value):
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, (int, np.integer))
+        or value < 0
+    ):
+        raise ValueError(f"{name} must be a nonnegative integer.")
+    return int(value)
+
+
+def _validate_positive_finite(name, value):
+    if not np.isscalar(value) or not np.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be finite and positive.")
+    return float(value)
 
 
 def _generate_null_dataset(rng, n_samples, n_features):
@@ -200,6 +218,7 @@ def run_simulation(
     selector=None,
     selection_event="exact_set",
     multiplicity="none",
+    inference_method="conditional_mc",
     stop_when_ess_met=False,
 ):
     """Run the global-null experiment documented in ``docs/``.
@@ -227,14 +246,20 @@ def run_simulation(
         raise ValueError("pilot_iters must be nonnegative and pilot_samples positive.")
     if final_batch_size < 1 or max_final_samples < 1:
         raise ValueError("Final AIS sample counts must be positive.")
-    if min_denominator_ess <= 0 or min_tail_ess <= 0:
-        raise ValueError("AIS ESS thresholds must be positive.")
+    _validate_positive_finite("min_denominator_ess", min_denominator_ess)
+    _validate_positive_finite("min_tail_ess", min_tail_ess)
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
-    if isinstance(seed, (bool, np.bool_)) or not isinstance(seed, (int, np.integer)):
-        raise TypeError("seed must be an integer.")
+    seed = _validate_seed("seed", seed)
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
+    _validate_selection_event(selection_event)
+    if multiplicity not in {"none", "bonferroni", "holm"}:
+        raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
+    if inference_method not in {"conditional_mc", "ais"}:
+        raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
+    if inference_method == "conditional_mc" and stop_when_ess_met:
+        raise ValueError("stop_when_ess_met requires inference_method='ais'.")
     resolved_rf_params = _resolve_rf_params(rf_params) if estimator is None and selector is None else None
     resolved_selector = make_selector(
         estimator=estimator,
@@ -248,6 +273,15 @@ def run_simulation(
     selective_p_values = []
     ais_diagnostics = []
 
+    if selection_event == "exact_set":
+        warnings.warn(
+            "Exact-set conditioning can be rare. Conditional Monte Carlo remains "
+            "valid but may be conservative when few proposal radii reproduce the "
+            "event; inspect selected_samples and selection_probability_estimate.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     iteration_seeds = np.random.SeedSequence(seed).spawn(n_iters)
     for iteration, iteration_seed in enumerate(
         tqdm(iteration_seeds, desc="Running simulation"), start=1
@@ -258,24 +292,28 @@ def run_simulation(
 
         X, response = _generate_null_dataset(data_rng, n_samples, n_features)
 
-        inference_result = selective_inference(
-            X,
-            response,
-            k_select=k_select,
-            sigma=SIMULATION_SIGMA,
-            selector=resolved_selector,
-            selection_event=selection_event,
-            multiplicity=multiplicity,
-            ais_seed=int(ais_seed.generate_state(1, dtype=np.uint32)[0]),
-            pilot_iters=pilot_iters,
-            pilot_samples=pilot_samples,
-            final_batch_size=final_batch_size,
-            max_final_samples=max_final_samples,
-            min_denominator_ess=min_denominator_ess,
-            min_tail_ess=min_tail_ess,
-            stop_when_ess_met=stop_when_ess_met,
-        )
-        shap_selected = inference_result["observed_selected_features"]
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message="Exact-set conditioning can make the event rare"
+            )
+            inference_result = selective_inference(
+                X,
+                response,
+                k_select=k_select,
+                sigma=SIMULATION_SIGMA,
+                selector=resolved_selector,
+                selection_event=selection_event,
+                multiplicity=multiplicity,
+                inference_method=inference_method,
+                ais_seed=int(ais_seed.generate_state(1, dtype=np.uint32)[0]),
+                pilot_iters=pilot_iters,
+                pilot_samples=pilot_samples,
+                final_batch_size=final_batch_size,
+                max_final_samples=max_final_samples,
+                min_denominator_ess=min_denominator_ess,
+                min_tail_ess=min_tail_ess,
+                stop_when_ess_met=stop_when_ess_met,
+            )
         random_selected = random_selection_rng.choice(
             n_features, size=k_select, replace=False
         )
@@ -312,8 +350,13 @@ def run_simulation(
     unadjusted_summary, unadjusted_flat = _method_summary(
         "Unadjusted SHAP", unadjusted_p_values, alpha, require_complete=True
     )
+    selective_method_name = (
+        "Selective SHAP (conditional MC)"
+        if inference_method == "conditional_mc"
+        else "Selective SHAP (approximate AIS)"
+    )
     selective_summary, selective_flat = _method_summary(
-        "Selective SHAP (AIS)",
+        selective_method_name,
         selective_p_values,
         alpha,
         require_complete=True,
@@ -333,8 +376,9 @@ def run_simulation(
         "p_values": {
             "Random": random_flat,
             "Unadjusted SHAP": unadjusted_flat,
-            "Selective SHAP (AIS)": selective_flat,
+            selective_method_name: selective_flat,
         },
+        "inference_diagnostics": diagnostics,
         "ais_diagnostics": diagnostics,
         "alpha": alpha,
         "settings": {
@@ -347,9 +391,16 @@ def run_simulation(
             "rf_params": None if resolved_rf_params is None else resolved_rf_params.copy(),
             "selection_event": selection_event,
             "multiplicity": multiplicity,
+            "inference_method": inference_method,
             "variance_method": "known_simulation_sigma",
             "sigma": SIMULATION_SIGMA,
             "selector_settings": dict(resolved_selector.get_settings()),
+            "pilot_iters": pilot_iters,
+            "pilot_samples": pilot_samples,
+            "final_batch_size": final_batch_size,
+            "max_final_samples": max_final_samples,
+            "min_denominator_ess": min_denominator_ess,
+            "min_tail_ess": min_tail_ess,
             "p_value_scale": (
                 "raw" if multiplicity == "none" else "multiplicity_adjusted"
             ),

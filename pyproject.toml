@@ -24,7 +24,6 @@ notebook = [
     "ipykernel==7.3.0",
     "nbclient>=0.10,<1",
     "nbformat>=5.10,<6",
-    "statsmodels==0.14.6",
 ]
 test = [
     "pytest>=8,<9",

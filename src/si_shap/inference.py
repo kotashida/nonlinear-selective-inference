@@ -11,6 +11,24 @@ from scipy.special import logsumexp
 DEFENSIVE_MIXTURE_WEIGHTS = (0.25, 0.375, 0.375)
 
 
+def _clopper_pearson_interval(successes, trials, confidence=0.95):
+    """Return an exact binomial interval, or NaNs when there are no trials."""
+    if trials == 0:
+        return np.nan, np.nan
+    alpha = 1.0 - confidence
+    lower = (
+        0.0
+        if successes == 0
+        else float(stats.beta.ppf(alpha / 2.0, successes, trials - successes + 1))
+    )
+    upper = (
+        1.0
+        if successes == trials
+        else float(stats.beta.ppf(1.0 - alpha / 2.0, successes + 1, trials - successes))
+    )
+    return lower, upper
+
+
 def _spline_effect_basis(x):
     """Return an orthonormal basis for the centered cubic B-spline effect."""
     design = np.asarray(
@@ -147,6 +165,75 @@ def _sample_defensive_mixture(rng, size, rank, t_obs, adapted_mean, adapted_sd):
     return z_values, proposal_logpdf
 
 
+def _run_conditional_mc(
+    t_obs,
+    rank,
+    is_selected,
+    rng,
+    *,
+    batch_size=80,
+    n_proposals=800,
+):
+    """Return a finite-sample-valid conditional Monte Carlo rank p-value.
+
+    Proposals are i.i.d. from the null chi distribution.  Conditional on the
+    number that reproduce the selection event, the retained radii and the
+    observed radius are exchangeable under the selective null.  Therefore
+
+        (1 + number of retained radii >= t_obs) / (1 + retained radii)
+
+    is a (possibly conservative) exact Monte Carlo p-value.  A rare event does
+    not create a missing p-value: no retained draws gives the valid value one.
+    """
+    selected_samples = 0
+    tail_samples = 0
+    proposals = 0
+    while proposals < n_proposals:
+        current_size = min(batch_size, n_proposals - proposals)
+        z_values = stats.chi.rvs(df=rank, size=current_size, random_state=rng)
+        selected = np.fromiter(
+            (is_selected(float(z)) for z in z_values),
+            dtype=bool,
+            count=current_size,
+        )
+        retained = z_values[selected]
+        selected_samples += int(retained.size)
+        tail_samples += int(np.sum(retained >= t_obs))
+        proposals += current_size
+
+    p_value = float((tail_samples + 1.0) / (selected_samples + 1.0))
+    if selected_samples:
+        tail_fraction = tail_samples / selected_samples
+        mc_se = float(
+            np.sqrt(tail_fraction * (1.0 - tail_fraction) / selected_samples)
+        )
+    else:
+        mc_se = np.nan
+    ci_lower, ci_upper = _clopper_pearson_interval(
+        tail_samples, selected_samples
+    )
+    return p_value, {
+        "status": "ok",
+        "resolution_status": (
+            "resolved" if selected_samples else "no_selected_mc_draws_p_equals_one"
+        ),
+        "proposals": proposals,
+        "selected_samples": selected_samples,
+        "tail_samples": tail_samples,
+        "denominator_ess": float(selected_samples),
+        "tail_ess": float(tail_samples),
+        "mc_se": mc_se,
+        "mc_ci_95_lower": ci_lower,
+        "mc_ci_95_upper": ci_upper,
+        "tail_probability_mc_ci_95_lower": ci_lower,
+        "tail_probability_mc_ci_95_upper": ci_upper,
+        "selection_probability_estimate": selected_samples / proposals,
+        "sampling_mode": "fixed_budget_conditional_mc",
+        "p_value_method": "conditional_monte_carlo_rank",
+        "finite_sample_valid": True,
+    }
+
+
 def _run_ais(
     t_obs,
     rank,
@@ -162,7 +249,7 @@ def _run_ais(
 ):
     """Estimate the selected chi-tail ratio with a defensive proposal.
 
-    The confirmatory default uses the full, predeclared final-sample budget.
+    This exploratory estimator uses the full, predeclared final-sample budget.
     ``stop_when_ess_met=True`` retains the former exploratory early-stopping
     behavior, but its data-dependent sample size should not be used as evidence
     that the resulting estimate is an exact finite-sample p-value.
@@ -235,6 +322,8 @@ def _run_ais(
             "sampling_mode": (
                 "ess_early_stopping" if stop_when_ess_met else "fixed_budget"
             ),
+            "p_value_method": "self_normalized_importance_sampling_estimate",
+            "finite_sample_valid": False,
         }
 
     all_z = np.concatenate(selected_z_batches)
@@ -259,6 +348,8 @@ def _run_ais(
             "sampling_mode": (
                 "ess_early_stopping" if stop_when_ess_met else "fixed_budget"
             ),
+            "p_value_method": "self_normalized_importance_sampling_estimate",
+            "finite_sample_valid": False,
         }
 
     p_value = float(np.sum(weights * tail) / np.sum(weights))
@@ -283,4 +374,6 @@ def _run_ais(
         "sampling_mode": (
             "ess_early_stopping" if stop_when_ess_met else "fixed_budget"
         ),
+        "p_value_method": "self_normalized_importance_sampling_estimate",
+        "finite_sample_valid": False,
     }

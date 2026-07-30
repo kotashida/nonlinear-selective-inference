@@ -14,32 +14,21 @@ from .api import selective_inference
 from .inference import _spline_effect_basis
 from .selection import (
     ShapSelector,
+    _MemoizedSelector,
     _resolve_rf_params,
     _validate_selection_event,
     make_selector,
+    target_from_selected_set,
 )
-from .simulation import SIMULATION_SIGMA, _validate_inputs
+from .simulation import (
+    SIMULATION_SIGMA,
+    _validate_inputs,
+    _validate_positive_finite,
+    _validate_seed,
+)
 
 
-DEFAULT_SELECTION_EVENTS = ("exact_set", "feature_inclusion")
-
-
-class _MemoizedSelector:
-    """Cache deterministic selector results within one fixed-X iteration."""
-
-    def __init__(self, selector):
-        self.selector = selector
-        self.cache = {}
-
-    def select(self, X, response, k_select):
-        response_array = np.ascontiguousarray(response, dtype=float)
-        key = (int(k_select), response_array.tobytes())
-        if key not in self.cache:
-            self.cache[key] = self.selector.select(X, response_array, k_select)
-        return self.cache[key]
-
-    def get_settings(self):
-        return {**dict(self.selector.get_settings()), "memoized_within_iteration": True}
+DEFAULT_SELECTION_EVENTS = ("feature_inclusion", "exact_set", "same_target")
 
 
 def _validate_power_inputs(
@@ -119,45 +108,31 @@ def _generate_power_dataset(
 
 
 def _summarize_event_power(
-    signal_results: pd.DataFrame,
+    target_results: pd.DataFrame,
     feature_results: pd.DataFrame,
     *,
     n_iters: int,
-    n_signal_features: int,
     alpha: float,
 ) -> dict[str, float | int | str]:
-    """Summarize selection, power, null-feature rejections, and AIS failures."""
-    selection_event = str(signal_results["selection_event"].iloc[0])
-    selected_signal = signal_results["selected"].to_numpy(dtype=bool)
-    failed_signal = signal_results["failed"].to_numpy(dtype=bool)
-    rejected_signal = signal_results["rejected"].to_numpy(dtype=bool)
-    n_selected_signal = int(np.sum(selected_signal))
-    n_failed_signal = int(np.sum(failed_signal))
-
-    iteration_complete = signal_results.groupby("iteration")["failed"].apply(
-        lambda failed: not bool(np.any(failed))
-    )
-    complete_iterations = iteration_complete[iteration_complete].index
-    complete_signal = signal_results[
-        signal_results["iteration"].isin(complete_iterations)
-    ]
-    iteration_power = complete_signal.groupby("iteration")["rejected"].mean()
-    converged_power = (
-        float(iteration_power.mean()) if not iteration_power.empty else np.nan
-    )
+    """Summarize detection of one common randomized target per iteration."""
+    selection_event = str(target_results["selection_event"].iloc[0])
+    target_is_signal = target_results["target_is_signal"].to_numpy(dtype=bool)
+    failed = target_results["failed"].to_numpy(dtype=bool)
+    rejected = target_results["rejected"].to_numpy(dtype=bool)
+    success = target_is_signal & rejected
+    failed_signal = target_is_signal & failed
+    complete = ~failed_signal
+    converged_power = float(np.mean(success[complete])) if np.any(complete) else np.nan
     converged_simulation_se = (
-        float(iteration_power.std(ddof=1) / np.sqrt(iteration_power.size))
-        if iteration_power.size > 1
-        else np.nan
+        float(np.std(success[complete], ddof=1) / np.sqrt(np.sum(complete)))
+        if np.sum(complete) > 1 else np.nan
     )
+    signal_complete = target_is_signal & ~failed
+    conditional_power = (
+        float(np.mean(rejected[signal_complete])) if np.any(signal_complete) else np.nan
+    )
+    n_failed_signal = int(np.sum(failed_signal))
     strict_complete = n_failed_signal == 0
-
-    converged_selected = signal_results[selected_signal & ~failed_signal]
-    converged_conditional_power = (
-        float(converged_selected["rejected"].mean())
-        if not converged_selected.empty
-        else np.nan
-    )
 
     non_signal_results = feature_results[~feature_results["is_signal"]]
     failed_non_signal = (
@@ -183,10 +158,9 @@ def _summarize_event_power(
         if not converged_fixed_null.empty
         else np.nan
     )
-    total_signal_tests = n_iters * n_signal_features
-    rejected_count = int(np.sum(rejected_signal))
-    power_lower_bound = rejected_count / total_signal_tests
-    power_upper_bound = (rejected_count + n_failed_signal) / total_signal_tests
+    rejected_count = int(np.sum(success))
+    power_lower_bound = rejected_count / n_iters
+    power_upper_bound = (rejected_count + n_failed_signal) / n_iters
 
     return {
         "selection_event": selection_event,
@@ -194,15 +168,17 @@ def _summarize_event_power(
         "simulation_se": converged_simulation_se if strict_complete else np.nan,
         "converged_power": converged_power,
         "converged_simulation_se": converged_simulation_se,
-        "conditional_power": (
-            converged_conditional_power if strict_complete else np.nan
+        "conditional_power_given_signal_target": (
+            conditional_power if strict_complete else np.nan
         ),
-        "converged_conditional_power": converged_conditional_power,
+        "converged_conditional_power_given_signal_target": conditional_power,
         "power_lower_bound": power_lower_bound,
         "power_upper_bound": power_upper_bound,
-        "signal_selection_rate": float(np.mean(selected_signal)),
-        "signal_test_failure_rate": (
-            n_failed_signal / n_selected_signal if n_selected_signal else 0.0
+        "target_signal_rate": float(np.mean(target_is_signal)),
+        "target_test_failure_rate": float(np.mean(failed)),
+        "signal_target_test_failure_rate": (
+            n_failed_signal / int(np.sum(target_is_signal))
+            if np.any(target_is_signal) else 0.0
         ),
         "converged_non_signal_rejection_rate": (
             converged_non_signal_rejection_rate
@@ -221,10 +197,9 @@ def _summarize_event_power(
             else 0.0
         ),
         "n_iterations": n_iters,
-        "n_complete_iterations": int(iteration_complete.sum()),
-        "n_signal_features": n_signal_features,
-        "n_selected_signal_tests": n_selected_signal,
-        "n_converged_signal_tests": n_selected_signal - n_failed_signal,
+        "n_complete_iterations": int(np.sum(complete)),
+        "n_signal_targets": int(np.sum(target_is_signal)),
+        "n_converged_signal_targets": int(np.sum(signal_complete)),
         "n_selected_non_signal_tests": int(len(non_signal_results)),
         "n_selected_fixed_design_null_tests": int(len(fixed_null_results)),
         "alpha": alpha,
@@ -232,7 +207,7 @@ def _summarize_event_power(
 
 
 def _paired_comparisons(
-    signal_results: pd.DataFrame,
+    target_results: pd.DataFrame,
     summary: pd.DataFrame,
     selection_events: Sequence[str],
 ) -> pd.DataFrame:
@@ -241,27 +216,19 @@ def _paired_comparisons(
     summary_by_event = summary.set_index("selection_event")
     rows = []
     for comparison_event in selection_events[1:]:
-        paired = signal_results[
-            signal_results["selection_event"].isin((baseline, comparison_event))
+        paired = target_results[
+            target_results["selection_event"].isin((baseline, comparison_event))
         ].pivot(
-            index=["iteration", "feature"],
+            index="iteration",
             columns="selection_event",
-            values=["rejected", "failed"],
+            values=["successful_detection", "failed_signal_test"],
         )
         pair_complete = ~(
-            paired["failed"][baseline].astype(bool)
-            | paired["failed"][comparison_event].astype(bool)
+            paired["failed_signal_test"][baseline].astype(bool)
+            | paired["failed_signal_test"][comparison_event].astype(bool)
         )
-        complete_by_iteration = pair_complete.groupby(level="iteration").all()
-        complete_iterations = complete_by_iteration[complete_by_iteration].index
-        complete_paired = paired.loc[
-            paired.index.get_level_values("iteration").isin(complete_iterations),
-            "rejected",
-        ]
-        iteration_difference = (
-            complete_paired[comparison_event].astype(float)
-            - complete_paired[baseline].astype(float)
-        ).groupby(level="iteration").mean()
+        complete_paired = paired.loc[pair_complete, "successful_detection"]
+        iteration_difference = complete_paired[comparison_event].astype(float) - complete_paired[baseline].astype(float)
         converged_difference = (
             float(iteration_difference.mean())
             if not iteration_difference.empty
@@ -333,27 +300,24 @@ def compare_selection_event_power(
     estimator=None,
     selector=None,
     multiplicity: str = "none",
+    inference_method: str = "conditional_mc",
     stop_when_ess_met: bool = False,
 ):
     """Compare conditioning-event power on identical alternative datasets.
 
-    ``power`` is the probability that a true signal is selected and rejected.
-    The same generated data, selector, and AIS seed are used for every event in
-    each iteration, making event differences paired. If any selected-signal AIS
-    test fails, strict ``power`` is unavailable and explicitly labeled
-    ``converged_power`` is also reported from complete iterations.
+    One feature is sampled uniformly from the observed selected set using fixed
+    auxiliary randomness. ``power`` is the probability that this common target
+    is a true signal and its selective test rejects. Data, target, auxiliary
+    draw, selector, and Monte Carlo seed are shared across events within each iteration.
     """
     _validate_inputs(n_iters, n_samples, n_features, k_select, alpha)
     signal_features, selection_events = _validate_power_inputs(
         n_features, signal_features, signal_strength, selection_events
     )
-    if k_select == 1 and {
-        "exact_set",
-        "feature_inclusion",
-    }.issubset(selection_events):
+    if k_select == 1 and len(selection_events) > 1:
         warnings.warn(
-            "For k_select=1, exact_set and feature_inclusion define the same "
-            "selection event, so their exact power is identical.",
+            "For k_select=1, feature_inclusion, exact_set, and same_target "
+            "define the same selection event, so their exact power is identical.",
             UserWarning,
             stacklevel=2,
         )
@@ -377,16 +341,19 @@ def compare_selection_event_power(
         raise ValueError("pilot_iters must be nonnegative and pilot_samples positive.")
     if final_batch_size < 1 or max_final_samples < 1:
         raise ValueError("Final AIS sample counts must be positive.")
-    if min_denominator_ess <= 0 or min_tail_ess <= 0:
-        raise ValueError("AIS ESS thresholds must be positive.")
+    _validate_positive_finite("min_denominator_ess", min_denominator_ess)
+    _validate_positive_finite("min_tail_ess", min_tail_ess)
     if multiplicity not in {"none", "bonferroni", "holm"}:
         raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
-    if isinstance(seed, (bool, np.bool_)) or not isinstance(seed, (int, np.integer)):
-        raise TypeError("seed must be an integer.")
+    seed = _validate_seed("seed", seed)
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
+    if inference_method not in {"conditional_mc", "ais"}:
+        raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
+    if inference_method == "conditional_mc" and stop_when_ess_met:
+        raise ValueError("stop_when_ess_met requires inference_method='ais'.")
 
     resolved_rf_params = (
         _resolve_rf_params(rf_params)
@@ -406,13 +373,13 @@ def compare_selection_event_power(
     )
     signal_feature_set = set(signal_features)
     feature_records = []
-    signal_records = []
+    target_records = []
 
     iteration_seeds = np.random.SeedSequence(seed).spawn(n_iters)
     for iteration, iteration_seed in enumerate(
         tqdm(iteration_seeds, desc="Comparing selection events"), start=1
     ):
-        data_seed, ais_seed = iteration_seed.spawn(2)
+        data_seed, target_seed, ais_seed = iteration_seed.spawn(3)
         X, response, mean_response = _generate_power_dataset(
             np.random.default_rng(data_seed),
             n_samples,
@@ -422,38 +389,50 @@ def compare_selection_event_power(
             return_mean=True,
         )
         shared_ais_seed = int(ais_seed.generate_state(1, dtype=np.uint32)[0])
+        shared_target_seed = int(target_seed.generate_state(1, dtype=np.uint32)[0])
         iteration_selector = (
             _MemoizedSelector(resolved_selector)
             if isinstance(resolved_selector, ShapSelector)
             else resolved_selector
         )
-        observed_selected = None
-        event_results = {}
+        observed_result = iteration_selector.select(X, response, k_select)
+        observed_selected = tuple(
+            int(feature) for feature in observed_result.selected_features
+        )
+        auxiliary_u = float(np.random.default_rng(shared_target_seed).random())
+        observed_target = target_from_selected_set(observed_selected, auxiliary_u)
         for selection_event in selection_events:
-            inference_result = selective_inference(
-                X,
-                response,
-                k_select=k_select,
-                sigma=SIMULATION_SIGMA,
-                selector=iteration_selector,
-                selection_event=selection_event,
-                multiplicity=multiplicity,
-                ais_seed=shared_ais_seed,
-                pilot_iters=pilot_iters,
-                pilot_samples=pilot_samples,
-                final_batch_size=final_batch_size,
-                max_final_samples=max_final_samples,
-                min_denominator_ess=min_denominator_ess,
-                min_tail_ess=min_tail_ess,
-                stop_when_ess_met=stop_when_ess_met,
-            )
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", message="Exact-set conditioning can make the event rare"
+                )
+                inference_result = selective_inference(
+                    X,
+                    response,
+                    k_select=k_select,
+                    sigma=SIMULATION_SIGMA,
+                    selector=iteration_selector,
+                    selection_event=selection_event,
+                    target_rule="uniform_from_selected",
+                    target_seed=shared_target_seed,
+                    auxiliary_u=auxiliary_u,
+                    target_feature=observed_target,
+                    multiplicity=multiplicity,
+                    inference_method=inference_method,
+                    ais_seed=shared_ais_seed,
+                    pilot_iters=pilot_iters,
+                    pilot_samples=pilot_samples,
+                    final_batch_size=final_batch_size,
+                    max_final_samples=max_final_samples,
+                    min_denominator_ess=min_denominator_ess,
+                    min_tail_ess=min_tail_ess,
+                    stop_when_ess_met=stop_when_ess_met,
+                )
             selected = tuple(
                 int(feature)
                 for feature in inference_result["observed_selected_features"]
             )
-            if observed_selected is None:
-                observed_selected = selected
-            elif selected != observed_selected:
+            if selected != observed_selected:
                 raise RuntimeError(
                     "The deterministic selector returned different observed "
                     "features across conditioning events."
@@ -482,57 +461,53 @@ def compare_selection_event_power(
                 event_frame["p_value_used"] < alpha
             ).fillna(False)
             feature_records.extend(event_frame.to_dict(orient="records"))
-            event_results[selection_event] = event_frame.set_index("feature")
-
-        for selection_event, event_frame in event_results.items():
-            for feature in signal_features:
-                selected = feature in event_frame.index
-                if selected:
-                    row = event_frame.loc[feature]
-                    p_value = float(row["p_value_used"])
-                    failed = bool(row["failed"])
-                    rejected = bool(row["rejected"])
-                else:
-                    p_value = np.nan
-                    failed = False
-                    rejected = False
-                signal_records.append(
-                    {
-                        "iteration": iteration,
-                        "selection_event": selection_event,
-                        "feature": feature,
-                        "selected": selected,
-                        "p_value": p_value,
-                        "failed": failed,
-                        "rejected": rejected,
-                    }
-                )
+            if len(event_frame) != 1 or int(event_frame.iloc[0]["feature"]) != observed_target:
+                raise RuntimeError("Each event must test the same single target feature.")
+            row = event_frame.iloc[0]
+            target_is_signal = observed_target in signal_feature_set
+            failed = bool(row["failed"])
+            rejected = bool(row["rejected"])
+            target_records.append(
+                {
+                    "iteration": iteration,
+                    "selection_event": selection_event,
+                    "target_feature": observed_target,
+                    "target_is_signal": target_is_signal,
+                    "auxiliary_u": auxiliary_u,
+                    "target_seed": shared_target_seed,
+                    "p_value": float(row["p_value_used"]),
+                    "failed": failed,
+                    "rejected": rejected,
+                    "successful_detection": target_is_signal and rejected,
+                    "failed_signal_test": target_is_signal and failed,
+                }
+            )
 
     feature_results = pd.DataFrame(feature_records)
-    signal_results = pd.DataFrame(signal_records)
+    target_results = pd.DataFrame(target_records)
     summary = pd.DataFrame(
         [
             _summarize_event_power(
-                signal_results[
-                    signal_results["selection_event"] == selection_event
+                target_results[
+                    target_results["selection_event"] == selection_event
                 ],
                 feature_results[
                     feature_results["selection_event"] == selection_event
                 ],
                 n_iters=n_iters,
-                n_signal_features=len(signal_features),
                 alpha=alpha,
             )
             for selection_event in selection_events
         ]
     )
     comparisons = _paired_comparisons(
-        signal_results, summary, selection_events
+        target_results, summary, selection_events
     )
     return {
         "summary": summary,
         "comparisons": comparisons,
-        "signal_results": signal_results,
+        "target_results": target_results,
+        "signal_results": target_results,
         "feature_results": feature_results,
         "alpha": alpha,
         "settings": {
@@ -543,10 +518,13 @@ def compare_selection_event_power(
             "signal_features": signal_features,
             "signal_strength": float(signal_strength),
             "selection_events": selection_events,
+            "target_rule": "uniform_from_selected",
+            "target_randomization": "one fixed auxiliary_u per iteration",
             "alpha": alpha,
             "seed": seed,
             "selection_decimals": selection_decimals,
             "multiplicity": multiplicity,
+            "inference_method": inference_method,
             "variance_method": "known_simulation_sigma",
             "sigma": SIMULATION_SIGMA,
             "rf_params": (

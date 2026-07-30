@@ -71,7 +71,7 @@ def test_duplicate_rf_parameters_are_rejected():
         )
 
 
-def test_plot_fallback_requires_enough_complete_iterations():
+def test_power_plot_never_promotes_converged_only_iterations():
     summary = pd.DataFrame(
         {
             "power": [np.nan, np.nan, 0.4],
@@ -82,14 +82,14 @@ def test_plot_fallback_requires_enough_complete_iterations():
         }
     )
 
-    values, errors, fallback, complete, total = power_example._power_plot_data(
+    values, errors, complete, total = power_example._power_plot_data(
         summary
     )
 
     assert np.isnan(values[0])
-    np.testing.assert_allclose(values[1:], [0.6, 0.4])
-    np.testing.assert_allclose(errors, [0.0, 0.1, 0.05])
-    np.testing.assert_array_equal(fallback, [False, True, False])
+    assert np.isnan(values[1])
+    assert values[2] == 0.4
+    np.testing.assert_allclose(errors, [0.0, 0.0, 0.05])
     np.testing.assert_array_equal(complete, [2, 60, 100])
     np.testing.assert_array_equal(total, [100, 100, 100])
 
@@ -136,7 +136,7 @@ def _fake_power_result():
     }
 
 
-def test_result_bundle_is_staged_and_preserves_unrelated_files(
+def test_result_bundle_is_staged_without_preserving_stale_files(
     monkeypatch, tmp_path
 ):
     output_dir = tmp_path / "power"
@@ -151,10 +151,11 @@ def test_result_bundle_is_staged_and_preserves_unrelated_files(
         _fake_power_result(), output_dir
     )
 
-    assert (output_dir / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert not (output_dir / "keep.txt").exists()
     assert (output_dir / "power_summary.csv").is_file()
     assert (output_dir / "paired_power_comparison.csv").is_file()
     assert (output_dir / "signal_results.csv").is_file()
+    assert (output_dir / "target_results.csv").is_file()
     assert (output_dir / "feature_results.csv").is_file()
     assert (output_dir / "settings.json").is_file()
     assert (output_dir / "power_comparison.png").read_bytes() == b"png"
@@ -207,13 +208,13 @@ def test_main_records_preset_metadata_and_passes_resolved_controls(
                 "power": [0.5],
                 "simulation_se": [0.1],
                 "converged_power": [0.5],
-                "conditional_power": [0.5],
-                "signal_selection_rate": [1.0],
-                "signal_test_failure_rate": [0.0],
+                "conditional_power_given_signal_target": [0.5],
+                "target_signal_rate": [1.0],
+                "signal_target_test_failure_rate": [0.0],
                 "n_complete_iterations": [1],
                 "n_iterations": [1],
-                "n_converged_signal_tests": [1],
-                "n_selected_signal_tests": [1],
+                "n_converged_signal_targets": [1],
+                "n_signal_targets": [1],
             }
         ),
         "comparisons": pd.DataFrame(),
@@ -317,21 +318,24 @@ def test_comparison_pairs_data_and_reports_power_difference(monkeypatch):
 
     def fake_selective_inference(X, y, **kwargs):
         selection_event = kwargs["selection_event"]
+        target_feature = kwargs["target_feature"]
         calls.append(
             {
                 "X": X.copy(),
                 "y": y.copy(),
                 "selection_event": selection_event,
                 "ais_seed": kwargs["ais_seed"],
+                "target_feature": target_feature,
+                "auxiliary_u": kwargs["auxiliary_u"],
             }
         )
         signal_p_value = 0.08 if selection_event == "exact_set" else 0.02
         frame = pd.DataFrame(
             {
-                "feature": [0, 1],
-                "selection_event": [selection_event, selection_event],
-                "raw_selective_p_value": [signal_p_value, 0.5],
-                "adjusted_selective_p_value": [signal_p_value, 0.5],
+                "feature": [target_feature],
+                "selection_event": [selection_event],
+                "raw_selective_p_value": [signal_p_value],
+                "adjusted_selective_p_value": [signal_p_value],
             }
         )
         return {
@@ -345,29 +349,33 @@ def test_comparison_pairs_data_and_reports_power_difference(monkeypatch):
         n_samples=20,
         n_features=4,
         k_select=2,
-        signal_features=(0,),
+        signal_features=(0, 1),
         signal_strength=1.0,
         selector=DummySelector(),
     )
 
-    exact, inclusion = result["summary"].set_index("selection_event").loc[
-        ["exact_set", "feature_inclusion"]
+    inclusion, exact = result["summary"].set_index("selection_event").loc[
+        ["feature_inclusion", "exact_set"]
     ].to_dict(orient="records")
     assert exact["power"] == 0.0
     assert inclusion["power"] == 1.0
-    assert exact["signal_selection_rate"] == 1.0
-    assert inclusion["signal_selection_rate"] == 1.0
-    assert result["comparisons"].loc[0, "power_difference"] == 1.0
+    assert exact["target_signal_rate"] == 1.0
+    assert inclusion["target_signal_rate"] == 1.0
+    assert result["comparisons"].loc[0, "power_difference"] == -1.0
     assert result["comparisons"].loc[0, "n_complete_pairs"] == 2
     assert "converged_non_signal_rejection_rate" in result["summary"]
     assert "converged_fixed_design_null_rejection_rate" in result["summary"]
     assert "fixed_design_null" in result["feature_results"]
     assert "null_projection_norm" in result["feature_results"]
 
-    for first, second in zip(calls[::2], calls[1::2]):
-        np.testing.assert_array_equal(first["X"], second["X"])
-        np.testing.assert_array_equal(first["y"], second["y"])
-        assert first["ais_seed"] == second["ais_seed"]
+    for offset in range(0, len(calls), 3):
+        group = calls[offset : offset + 3]
+        for call in group[1:]:
+            np.testing.assert_array_equal(group[0]["X"], call["X"])
+            np.testing.assert_array_equal(group[0]["y"], call["y"])
+            assert group[0]["ais_seed"] == call["ais_seed"]
+            assert group[0]["target_feature"] == call["target_feature"]
+            assert group[0]["auxiliary_u"] == call["auxiliary_u"]
 
 
 def test_failed_signal_test_makes_strict_power_unavailable(monkeypatch):
@@ -398,5 +406,5 @@ def test_failed_signal_test_makes_strict_power_unavailable(monkeypatch):
     summary = result["summary"].set_index("selection_event")
 
     assert np.isnan(summary.loc["exact_set", "power"])
-    assert summary.loc["exact_set", "signal_test_failure_rate"] == 1.0
+    assert summary.loc["exact_set", "signal_target_test_failure_rate"] == 1.0
     assert summary.loc["feature_inclusion", "power"] == 1.0

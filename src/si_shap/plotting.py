@@ -19,7 +19,8 @@ def plot_results(results):
     colors = {
         "Random": "gray",
         "Unadjusted SHAP": "blue",
-        "Selective SHAP (AIS)": "green",
+        "Selective SHAP (conditional MC)": "green",
+        "Selective SHAP (approximate AIS)": "orange",
     }
 
     plt.figure(figsize=(12, 6))
@@ -33,7 +34,7 @@ def plot_results(results):
             bins=20,
             range=(0, 1),
             alpha=0.45,
-            color=colors[method],
+            color=colors.get(method, "green"),
             edgecolor="black",
             label=f"{method} (FPR: {label_fpr})",
         )
@@ -200,7 +201,7 @@ def _plot_selection_region_on_axis(
         conditional_density,
         color="tab:blue",
         linewidth=2.4 if detailed_labels else 2.2,
-        label="Detected-region conditional density",
+        label="Conditional density over detected region",
     )
     axis.plot(
         z,
@@ -259,7 +260,7 @@ def _plot_selection_region_on_axis(
         f"target $x_{{{result.selected_feature}}}$, position "
         f"{result.selection_position}/{result.k_select} | "
         f"{result.selection_event.replace('_', '-')}\n"
-        f"df={result.rank}, detected probability="
+        f"df={result.rank}, diagnostic detected probability="
         f"{result.selection_probability:.4f}, upper bound="
         f"{probability_upper_bound:.4f}"
     )
