@@ -43,8 +43,8 @@ def test_main_saves_feature_level_selective_p_values(monkeypatch, tmp_path):
         ]
     )
     fake_result = {
-        "summary": pd.DataFrame([{"method": "Selective SHAP (AIS)"}]),
-        "p_values": {"Selective SHAP (AIS)": np.array([0.14])},
+        "summary": pd.DataFrame([{"method": "Selective SHAP (conditional MC)"}]),
+        "p_values": {"Selective SHAP (conditional MC)": np.array([0.14])},
         "ais_diagnostics": diagnostics,
         "settings": {"seed": 123, "rf_params": {}},
     }

@@ -2,9 +2,11 @@ import json
 from pathlib import Path
 
 import numpy as np
+import nbformat
 import pandas as pd
-import pytest
 import shap
+from nbclient import NotebookClient
+from patsy import dmatrix
 from scipy import stats
 from sklearn.ensemble import RandomForestRegressor
 from tqdm.auto import tqdm
@@ -31,7 +33,6 @@ def test_notebook_is_clean_and_has_no_hidden_cells():
 
 
 def test_notebook_simulation_computes_both_variance_modes_from_one_run():
-    smf = pytest.importorskip("statsmodels.formula.api")
     notebook = _notebook()
     namespace = {
         "np": np,
@@ -39,7 +40,7 @@ def test_notebook_simulation_computes_both_variance_modes_from_one_run():
         "shap": shap,
         "stats": stats,
         "RandomForestRegressor": RandomForestRegressor,
-        "smf": smf,
+        "dmatrix": dmatrix,
         "tqdm": tqdm,
     }
     exec("".join(notebook["cells"][1]["source"]), namespace)
@@ -60,3 +61,25 @@ def test_notebook_simulation_computes_both_variance_modes_from_one_run():
     assert result["pvals_shap"]["known"].shape == (2, 2)
     assert result["pvals_shap"]["unknown"].shape == (2, 2)
     assert result["pvals_random"]["known"].shape == (2, 2)
+
+
+def test_notebook_executes_all_cells_in_order(monkeypatch, tmp_path):
+    output_dir = tmp_path / "notebook-output"
+    monkeypatch.setenv("SI_SHAP_NOTEBOOK_N_ITERS", "2")
+    monkeypatch.setenv("SI_SHAP_NOTEBOOK_OUTPUT_DIR", str(output_dir))
+    notebook = nbformat.read(NOTEBOOK, as_version=4)
+
+    executed = NotebookClient(
+        notebook,
+        timeout=300,
+        kernel_name="python3",
+        resources={"metadata": {"path": str(Path.cwd())}},
+    ).execute()
+
+    assert all(
+        cell.get("execution_count") is not None
+        for cell in executed.cells
+        if cell.cell_type == "code"
+    )
+    assert (output_dir / "unadjusted_vs_random_results.csv").is_file()
+    assert (output_dir / "unadjusted_vs_random_rf_sensitivity.png").is_file()

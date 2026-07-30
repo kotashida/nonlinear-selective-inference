@@ -35,7 +35,7 @@ def test_validate_inputs_rejects_noninteger_counts():
 
 def test_method_summary_reports_failures_without_silently_estimating_fpr():
     summary, converged = _method_summary(
-        "Selective SHAP (AIS)",
+        "Selective SHAP (approximate AIS)",
         [np.array([0.01]), np.array([np.nan])],
         alpha=0.05,
     )
@@ -112,10 +112,13 @@ def test_run_simulation_uses_requested_adjusted_p_values(monkeypatch):
     )
 
     np.testing.assert_allclose(
-        result["p_values"]["Selective SHAP (AIS)"], [0.02, 0.8]
+        result["p_values"]["Selective SHAP (conditional MC)"], [0.02, 0.8]
     )
     # The unadjusted and random baselines receive the same family-size
     # correction rather than being compared on a different p-value scale.
     assert set(result["summary"]["p_value_scale"]) == {
         "multiplicity_adjusted"
     }
+    assert result["settings"]["inference_method"] == "conditional_mc"
+    assert result["settings"]["pilot_iters"] == 3
+    assert result["settings"]["max_final_samples"] == 800

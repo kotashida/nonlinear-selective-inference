@@ -1,8 +1,8 @@
-"""Run SHAP selective inference with adaptive importance sampling.
+"""Run finite-sample-valid SHAP selective inference or exploratory AIS.
 
 This executable example generates data under the project's global-null model,
-selects the top-k features by mean absolute Tree SHAP importance, and estimates
-one selective p-value for every selected feature with AIS.
+selects the top-k features by mean absolute Tree SHAP importance, and computes
+one conditional Monte Carlo selective p-value for every selected feature.
 """
 
 from __future__ import annotations
@@ -59,6 +59,15 @@ def parse_args(argv=None):
         choices=("none", "holm", "bonferroni"),
         default="none",
     )
+    parser.add_argument(
+        "--inference-method",
+        choices=("conditional_mc", "ais"),
+        default="conditional_mc",
+        help=(
+            "finite-sample-valid conditional Monte Carlo (default), or the "
+            "exploratory self-normalized AIS estimate"
+        ),
+    )
     parser.add_argument("--pilot-iters", type=int, default=3)
     parser.add_argument("--pilot-samples", type=int, default=40)
     parser.add_argument("--final-batch-size", type=int, default=80)
@@ -84,7 +93,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("outputs") / "selective_inference_ais",
+        default=Path("outputs") / "selective_inference",
     )
     return parser.parse_args(argv)
 
@@ -120,12 +129,14 @@ def main(argv=None):
         rf_params=rf_params,
         selection_event=args.selection_event,
         multiplicity=args.multiplicity,
+        inference_method=args.inference_method,
         stop_when_ess_met=args.stop_when_ess_met,
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     result["summary"].to_csv(args.output_dir / "summary.csv", index=False)
-    result["ais_diagnostics"].to_csv(
+    diagnostics = result.get("inference_diagnostics", result["ais_diagnostics"])
+    diagnostics.to_csv(
         args.output_dir / "selective_inference.csv", index=False
     )
     _p_values_frame(result).to_csv(
@@ -144,6 +155,7 @@ def main(argv=None):
                 "min_tail_ess": args.min_tail_ess,
                 "selection_event": args.selection_event,
                 "multiplicity": args.multiplicity,
+                "inference_method": args.inference_method,
                 "stop_when_ess_met": args.stop_when_ess_met,
             },
             file,
@@ -156,9 +168,9 @@ def main(argv=None):
         if args.multiplicity == "none"
         else "adjusted_selective_p_value"
     )
-    if reported_p_value_column not in result["ais_diagnostics"]:
+    if reported_p_value_column not in diagnostics:
         reported_p_value_column = "p_value"
-    result["ais_diagnostics"]["reported_p_value"] = result["ais_diagnostics"][
+    diagnostics["reported_p_value"] = diagnostics[
         reported_p_value_column
     ]
     columns = [
@@ -175,8 +187,8 @@ def main(argv=None):
         "tail_ess",
         "mc_se",
     ]
-    print("\nSelective-inference results (AIS):")
-    print(result["ais_diagnostics"][columns].to_string(index=False))
+    print(f"\nSelective-inference results ({args.inference_method}):")
+    print(diagnostics[columns].to_string(index=False))
     print(f"\nSaved results to {args.output_dir}")
     return result
 

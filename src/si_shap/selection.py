@@ -13,8 +13,14 @@ from sklearn.ensemble import RandomForestRegressor
 
 
 RF_PARAMS = {"n_estimators": 50, "max_depth": 5, "random_state": 42}
-SelectionEvent = Literal["exact_set", "feature_inclusion", "exact_ranking"]
-SELECTION_EVENTS = ("exact_set", "feature_inclusion", "exact_ranking")
+SelectionEvent = Literal[
+    "exact_set", "feature_inclusion", "same_target", "exact_ranking"
+]
+SELECTION_EVENTS = (
+    "exact_set", "feature_inclusion", "same_target", "exact_ranking"
+)
+TargetRule = Literal["all_selected", "uniform_from_selected"]
+TARGET_RULES = ("all_selected", "uniform_from_selected")
 
 
 @dataclass(frozen=True)
@@ -67,6 +73,30 @@ def _validate_selection_event(selection_event: str) -> str:
     return selection_event
 
 
+def _validate_target_rule(target_rule: str) -> str:
+    if target_rule not in TARGET_RULES:
+        choices = ", ".join(repr(value) for value in TARGET_RULES)
+        raise ValueError(f"target_rule must be one of {choices}.")
+    return target_rule
+
+
+def target_from_selected_set(selected_features, auxiliary_u: float) -> int:
+    """Choose uniformly from a set using fixed auxiliary randomness.
+
+    Sorting makes the map independent of the selector's ranking representation.
+    Reusing the same ``auxiliary_u`` conditions on the realized randomization.
+    """
+    selected = tuple(sorted({int(feature) for feature in selected_features}))
+    if not selected:
+        raise ValueError("selected_features must be nonempty.")
+    if not np.isscalar(auxiliary_u) or not np.isfinite(auxiliary_u):
+        raise ValueError("auxiliary_u must be a finite scalar in [0, 1).")
+    auxiliary_u = float(auxiliary_u)
+    if not 0.0 <= auxiliary_u < 1.0:
+        raise ValueError("auxiliary_u must lie in [0, 1).")
+    return selected[int(np.floor(auxiliary_u * len(selected)))]
+
+
 def selection_event_definition(selection_event: str, target_feature: int) -> str:
     """Return the mathematical event description recorded in outputs."""
     _validate_selection_event(selection_event)
@@ -74,7 +104,9 @@ def selection_event_definition(selection_event: str, target_feature: int) -> str
         return "frozenset(selected(z)) == frozenset(observed_selected)"
     if selection_event == "feature_inclusion":
         return f"{int(target_feature)} in selected(z)"
-    return "tuple(selected(z)) == tuple(observed_selected)"
+    if selection_event == "same_target":
+        return f"target(sorted(selected(z)), fixed_u) == {int(target_feature)}"
+    return "tuple(ranking(z)) == tuple(observed_ranking)"
 
 
 def selection_event_holds(
@@ -82,6 +114,9 @@ def selection_event_holds(
     observed_selected,
     target_feature: int,
     selection_event: str = "exact_set",
+    auxiliary_u: float | None = None,
+    ranking=None,
+    observed_ranking=None,
 ) -> bool:
     """Evaluate a selection event using one shared definition everywhere."""
     _validate_selection_event(selection_event)
@@ -91,7 +126,19 @@ def selection_event_holds(
         return frozenset(selected_tuple) == frozenset(observed_tuple)
     if selection_event == "feature_inclusion":
         return int(target_feature) in selected_tuple
-    return selected_tuple == observed_tuple
+    if selection_event == "same_target":
+        if auxiliary_u is None:
+            raise ValueError("same_target requires auxiliary_u.")
+        return target_from_selected_set(selected_tuple, auxiliary_u) == int(
+            target_feature
+        )
+    if ranking is None or observed_ranking is None:
+        raise ValueError(
+            "exact_ranking requires the complete candidate and observed rankings."
+        )
+    ranking_tuple = tuple(int(feature) for feature in ranking)
+    observed_ranking_tuple = tuple(int(feature) for feature in observed_ranking)
+    return ranking_tuple == observed_ranking_tuple
 
 
 def _check_estimator_reproducibility(estimator) -> None:
@@ -144,7 +191,7 @@ def _tree_shap_importance_for_estimator(
 
 
 class ShapSelector:
-    """Clone and refit a tree estimator before every Tree SHAP selection."""
+    """Single-output regression selector based on mean absolute Tree SHAP."""
 
     def __init__(self, estimator=None, *, selection_decimals: int = 10):
         if (
@@ -160,6 +207,15 @@ class ShapSelector:
         self.selection_decimals = selection_decimals
 
     def select(self, X, response, k_select) -> SelectionResult:
+        response = np.asarray(response)
+        if response.ndim != 1:
+            raise ValueError("ShapSelector supports only one-dimensional responses.")
+        if (
+            isinstance(k_select, (bool, np.bool_))
+            or not isinstance(k_select, (int, np.integer))
+            or not 1 <= k_select <= np.asarray(X).shape[1]
+        ):
+            raise ValueError("k_select must satisfy 1 <= k_select <= X.shape[1].")
         importance = _tree_shap_importance_for_estimator(
             X, response, self.selection_decimals, self.estimator
         )
@@ -180,6 +236,27 @@ class ShapSelector:
                 f"{type(self.estimator).__module__}.{type(self.estimator).__qualname__}"
             ),
             "estimator_params": self.estimator.get_params(deep=False),
+        }
+
+
+class _MemoizedSelector:
+    """Cache deterministic selector results for one fixed design matrix."""
+
+    def __init__(self, selector):
+        self.selector = selector
+        self.cache = {}
+
+    def select(self, X, response, k_select):
+        response_array = np.ascontiguousarray(response, dtype=float)
+        key = (int(k_select), response_array.tobytes())
+        if key not in self.cache:
+            self.cache[key] = self.selector.select(X, response_array, k_select)
+        return self.cache[key]
+
+    def get_settings(self):
+        return {
+            **dict(self.selector.get_settings()),
+            "memoized_within_iteration": True,
         }
 
 

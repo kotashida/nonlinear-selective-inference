@@ -1,6 +1,6 @@
 # SHAP Selective Inference Simulation
 
-This project simulates selective inference after features are selected using SHAP importance from a nonlinear model. It implements feature selection based on Random Forest Tree SHAP importance, chi tests for B-spline effects, selective $p$-value estimation using Adaptive Importance Sampling (AIS), and selection-region visualization.
+This project simulates selective inference after features are selected using SHAP importance from a nonlinear model. It implements Random Forest Tree SHAP selection, chi tests for B-spline effects, finite-sample-valid conditional Monte Carlo rank $p$ values, explicitly exploratory Adaptive Importance Sampling (AIS), and selection-region visualization.
 
 ## Real-data API and statistical scope
 
@@ -39,21 +39,24 @@ selected data. The currently supported built-in combination is a cloneable
 scikit-learn tree estimator with Tree SHAP; `RandomForestRegressor` is the
 officially tested estimator and every exposed `random_state` must be fixed.
 
-`feature_results` contains individual raw selective p-value estimates, optional
-Holm or Bonferroni adjusted values, the event definition, denominator and tail
-ESS, Monte Carlo standard error and interval, and convergence status. Exact-set conditioning does
-not itself correct multiplicity. A non-`ok` row has `NaN` as its selective
-p-value and must not be interpreted as a valid estimate. These estimate
-conditionally valid selection-adjusted p-values under the stated assumptions.
-The confirmatory default uses the full predeclared AIS budget; ESS-based early
-stopping is explicitly opt-in. Self-normalized AIS remains a finite-sample
-numerical approximation, so null calibration is required before formal use.
+`feature_results` contains individual selective p-values, optional Holm or
+Bonferroni adjusted values, the event definition, retained conditional-Monte-Carlo
+draw counts, and resolution diagnostics. Exact-set conditioning does not itself
+correct multiplicity. The default samples a fixed number of null chi radii and
+uses the selected-draw rank formula `(tail + 1) / (selected + 1)`. It is
+finite-sample valid and becomes conservatively equal to one when no proposal
+reproduces selection. `inference_method="ais"` retains the self-normalized AIS
+ratio as an explicitly approximate exploratory estimate; it is not an exact
+finite-sample p-value, even when ESS diagnostics are satisfactory.
 
-For `k_select=k`, the API returns `k` rows and selection-region visualization
-returns `k` plots: every selected feature has a distinct response path
-`y_j(z)`. Exact-set conditioning is stronger and can reduce power and effective
-sample size; inclusion is weaker, while exact-ranking additionally preserves
-the observed order.
+By default, for `k_select=k` the API returns `k` rows. With
+`target_rule="uniform_from_selected"`, it instead draws one auxiliary
+`u ~ Uniform(0,1)`, maps the canonically sorted selected set to one target, and
+returns one row. The same fixed `u` must be reused for every candidate response.
+The `same_target` event conditions only on reproducing that complete algorithm's
+target; `exact_set` also preserves the full selected set, `feature_inclusion`
+only preserves membership of the target, and `exact_ranking` preserves the
+complete feature ranking, including features below the top-$k$ boundary.
 
 ## Repository Structure
 
@@ -69,6 +72,7 @@ nonlinear-selective-inference/
 │       ├── __init__.py
 │       ├── api.py
 │       ├── inference.py
+│       ├── null_calibration.py
 │       ├── plotting.py
 │       ├── power.py
 │       ├── selection.py
@@ -76,6 +80,7 @@ nonlinear-selective-inference/
 │       └── simulation.py
 ├── examples/
 │   ├── compare_selection_event_power.py
+│   ├── compare_selection_event_null_calibration.py
 │   ├── plot_selection_regions.py
 │   ├── run_selective_inference.py
 │   └── sweep_selection_region_settings.py
@@ -97,14 +102,14 @@ nonlinear-selective-inference/
 
 - `src/si_shap/__init__.py`: Defines the package's public API, making the simulation, selection-region calculation, table conversion, and plotting functions importable directly from `si_shap`.
 - `src/si_shap/selection.py`: Fits the configurable Random Forest, computes mean absolute Tree SHAP importance, and performs deterministic top-$k$ feature selection with an explicit tie-breaking rule.
-- `src/si_shap/inference.py`: Implements an orthonormal basis for centered B-spline effects, the known-variance chi statistic, truncated normal distributions, effective sample sizes, and AIS proposal adaptation, sampling, and convergence diagnostics.
-- `src/si_shap/simulation.py`: Generates data under the global null hypothesis, runs the Random, Unadjusted SHAP, and Selective SHAP (AIS) methods, and summarizes their $p$ values, false positive rates, failure rates, and Monte Carlo diagnostics.
+- `src/si_shap/inference.py`: Implements an orthonormal basis for centered B-spline effects, the known-variance chi statistic, exact conditional Monte Carlo rank p-values, and exploratory AIS diagnostics.
+- `src/si_shap/simulation.py`: Generates data under the global null hypothesis, runs the Random, Unadjusted SHAP, and Selective SHAP methods, and summarizes their $p$ values, false positive rates, failure rates, and Monte Carlo diagnostics.
 - `src/si_shap/selection_regions.py`: Numerically scans the SHAP selection event as the response moves along the observed effect direction, then computes selection-interval boundaries, selection probabilities under the chi distribution, and proposal parameters for each dataset.
 - `src/si_shap/plotting.py`: Creates $p$-value histograms for the three methods and selection-region plots for one or more datasets, overlaying the chi density, selection-conditional density, and AIS proposal.
 
 ### Examples: `examples/`
 
-- `examples/run_selective_inference.py`: Runs the full SHAP selective-inference workflow with AIS and saves feature-level selective p-values and convergence diagnostics.
+- `examples/run_selective_inference.py`: Runs the finite-sample-valid workflow by default and optionally runs exploratory AIS.
 - `examples/plot_selection_regions.py`: Computes selection regions for random seeds supplied on the command line and generates `outputs/shap_selection_regions/shap_selection_regions.csv` and `outputs/shap_selection_regions/shap_selection_regions.png`.
 - `examples/sweep_selection_region_settings.py`: Compares selection regions across several top-$k$ and Random Forest settings.
 
@@ -115,7 +120,7 @@ nonlinear-selective-inference/
 ### Tests: `tests/`
 
 - `tests/test_selection.py`: Tests tie handling in top-$k$ selection, invalid SHAP importance inputs, and Random Forest parameter resolution.
-- `tests/test_inference.py`: Tests centering and orthonormality of the B-spline basis, the chi statistic and projection, and effective sample sizes.
+- `tests/test_inference.py`: Tests centering and orthonormality, the chi statistic, exact conditional Monte Carlo rank construction and calibration, and exploratory AIS.
 - `tests/test_simulation.py`: Tests simulation-argument validation, aggregation rules that account for AIS failures, and reproducible null-data generation.
 - `tests/test_selection_regions.py`: Tests bisection of selection-interval boundaries, anchor points that preserve narrow observed intervals, chi-probability integration, Random Forest parameter forwarding, and proposal display in single-region plots.
 
@@ -169,10 +174,10 @@ result = run_simulation(
 
 To compare all three methods, run `examples/run_selective_inference.py` as
 shown below. The retained notebook compares only Random and unadjusted SHAP
-inference. AIS refits the Random Forest and recomputes SHAP values for every
-candidate response, so begin with a small `n_iters` value.
+inference. Selective inference refits the Random Forest and recomputes SHAP
+values for every candidate response, so begin with a small `n_iters` value.
 
-Run SHAP selective inference with AIS directly from the repository root:
+Run finite-sample-valid SHAP selective inference directly from the repository root:
 
 ```powershell
 python examples/run_selective_inference.py `
@@ -184,22 +189,51 @@ python examples/run_selective_inference.py `
 ```
 
 The feature-level results are written to
-`outputs/selective_inference_ais/selective_inference.csv`. A row with
-`status=ok` contains the raw AIS selective p-value estimate in `p_value`, together
-with denominator/tail ESS, the Monte Carlo standard error and interval, and the
-fixed-budget/early-stopping mode. A non-`ok` status
-has `p_value=NaN`; increase `--max-final-samples` or revise the ESS thresholds
-rather than interpreting it as a valid p-value.
+`outputs/selective_inference/selective_inference.csv`. A row records the
+finite-sample-valid rank p-value, the number of proposal radii reproducing the
+event, the tail count, and the achieved selection-resolution diagnostic. Use
+`--inference-method ais` only for explicitly exploratory self-normalized AIS.
 
 The global-null summary reports featurewise FPR, FWER, global-null FDR, failure
 rates, confidence intervals, and a p-value uniformity KS statistic. The KS value
 is diagnostic only because selected-feature p-values can be dependent within an
 iteration.
 
-### Compare exact-set and feature-inclusion power
+### Validate selective-p-value super-uniformity
 
-Use the paired power experiment to compare the two conditioning events under a
-nonlinear alternative:
+Run the paired fixed-design global-null experiment to compare
+`feature_inclusion`, `exact_set`, and `same_target`:
+
+```powershell
+python examples/compare_selection_event_null_calibration.py `
+    --n-iters 100 `
+    --n-samples 100 `
+    --n-features 20 `
+    --k-select 2
+```
+
+The experiment generates one fixed design matrix and independent Gaussian null
+responses. In every iteration it chooses one target uniformly from the SHAP
+selected set and reuses that target, the realized auxiliary uniform draw, and
+the Monte Carlo seed for all three conditioning events. Only raw, unadjusted
+selective p-values are assessed. Finite-budget rank p-values are discrete and
+super-uniform, so calibration means rejection rates no larger than their nominal
+levels rather than exact continuous uniformity.
+
+Outputs under `outputs/selection_event_null_calibration/` include the complete
+p-value audit table, strict and converged calibration summaries, paired
+rejection-rate comparisons, the fixed design matrix, settings, histograms,
+uniform-reference Q-Q plots, empirical-CDF plots, and ECDF-minus-uniform plots
+with a one-sided 95% super-uniformity band. If exploratory AIS fails, strict rates are
+reported as unavailable and lower/upper rejection-rate bounds retain the failed
+replications in the denominator. Use a small run for smoke testing, then at
+least 1,000--2,000 iterations with a predeclared fixed Monte Carlo budget for
+substantive super-uniformity assessment.
+
+### Compare three target-selection events
+
+Use the paired power experiment to compare `feature_inclusion`, `exact_set`, and
+`same_target` under a nonlinear alternative:
 
 ```powershell
 python examples/compare_selection_event_power.py `
@@ -216,13 +250,13 @@ diagnose extreme-tail behavior and can be very slow. Any of `--n-iters`,
 `--signal-strength`, `--pilot-samples`, or `--max-final-samples` overrides its
 preset value.
 
-Every event is evaluated on identical generated data and with the same AIS seed
-within an iteration. The primary `power` estimate is
-`P(signal feature is selected and its selective test rejects)`. The output also
-separates `signal_selection_rate` and `conditional_power`, because the former is
-identical across conditioning events while the latter can differ. A strict
-power estimate is `NaN` if any selected-signal AIS test fails; the explicitly
-labeled `converged_power` remains available for diagnosis.
+Every event uses identical data, the same observed selected set, the same single
+randomized target, the same fixed auxiliary draw, and the same Monte Carlo seed within
+an iteration. The primary `power` estimate is
+`P(randomized target is a signal and its selective test rejects)`. The output
+also reports `target_signal_rate` and
+`conditional_power_given_signal_target`. A strict power estimate is `NaN` if
+any signal-target AIS test fails; `converged_power` remains diagnostic.
 
 The plot shows a converged-only fallback only when at least 20 and at least
 half of the iterations are complete; otherwise it reports `NA` with the
@@ -231,9 +265,8 @@ directory only after every CSV, JSON, and plot has been generated successfully.
 `settings.json` records the selected preset, package versions, Python/platform
 details, and Git commit/dirty state.
 
-Use `k_select >= 2` for this comparison. When `k_select=1`, preserving the full
-selected set and preserving inclusion of its only feature are the same event, so
-their exact power is identical.
+Use `k_select >= 2` for this comparison. For `k_select=1`, all three events are
+identical.
 
 Results are saved under the repository's `outputs/selection_event_power/`
 folder by default, even when the command is launched from another working
@@ -243,13 +276,13 @@ directory. Use `--output-dir` only when a different location is desired:
 - `paired_power_comparison.csv`: paired power differences, standard errors, and
   approximate 95% intervals; positive means the comparison event has more power
   than the baseline event.
-- `signal_results.csv` and `feature_results.csv`: iteration-level data for
-  auditing the aggregate estimates.
+- `target_results.csv` (also emitted as the compatibility alias
+  `signal_results.csv`) and `feature_results.csv`: iteration-level audit data.
 - `power_comparison.png`: a bar chart of overall power with simulation-error
   bars.
 
 Increase `--n-iters` for a final comparison. The workflow is computationally
-expensive because AIS repeatedly refits the selection model for both events.
+expensive because AIS repeatedly refits the selection model for all events.
 
 Generate the selection-region figure and CSV from the repository root with:
 

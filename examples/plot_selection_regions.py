@@ -13,6 +13,9 @@ from si_shap import (
 )
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 def _parse_rf_parameter(argument):
     """Parse one NAME=VALUE Random Forest parameter from the command line."""
     name, separator, raw_value = argument.partition("=")
@@ -54,7 +57,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--selection-event",
-        choices=("exact_set", "feature_inclusion", "exact_ranking"),
+        choices=("exact_set", "feature_inclusion", "same_target", "exact_ranking"),
         default="exact_set",
         help="conditioning event used for every feature-specific path",
     )
@@ -75,7 +78,7 @@ def parse_args(argv=None):
 def main():
     args = parse_args()
     rf_params = _rf_parameters(args.rf_param)
-    output_directory = Path("outputs") / "shap_selection_regions"
+    output_directory = PROJECT_ROOT / "outputs" / "shap_selection_regions"
     output_directory.mkdir(parents=True, exist_ok=True)
 
     results = compute_selection_regions(
@@ -90,6 +93,11 @@ def main():
         tail_probability=1e-8,
         rf_params=rf_params,
         selection_event=args.selection_event,
+        target_rule=(
+            "uniform_from_selected"
+            if args.selection_event == "same_target"
+            else "all_selected"
+        ),
     )
     summary = selection_regions_frame(results)
     summary.to_csv(output_directory / "shap_selection_regions.csv", index=False)

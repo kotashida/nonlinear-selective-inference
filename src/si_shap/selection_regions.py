@@ -17,13 +17,20 @@ from .inference import (
 from .selection import (
     ShapSelector,
     _resolve_rf_params,
-    _select_features,
+    _top_k,
+    _tree_shap_importance,
     _validate_selection_event,
+    _validate_target_rule,
     make_selector,
     selection_event_definition,
     selection_event_holds,
+    target_from_selected_set,
 )
-from .simulation import _generate_null_dataset
+from .simulation import (
+    _generate_null_dataset,
+    _validate_positive_finite,
+    _validate_seed,
+)
 
 
 SIMULATION_SIGMA = 1.0
@@ -55,6 +62,12 @@ class SelectionRegionResult:
     relative_omitted_tail_bound: float = np.nan
     effective_grid_size: int = 0
     grid_refinements: int = 0
+    target_rule: str = "all_selected"
+    auxiliary_u: float | None = None
+    observed_target_feature: int | None = None
+    target_seed: int | None = None
+    regions_certified: bool = False
+    region_method: str = "finite_grid_with_bisection_diagnostic"
 
 
 def _refine_transition(
@@ -169,6 +182,8 @@ def compute_selection_regions(
     estimator=None,
     selector=None,
     selection_event: str = "exact_set",
+    target_rule: str = "all_selected",
+    target_seed: int = 123,
 ) -> list[SelectionRegionResult]:
     """Generate null data sets and compute top-k SHAP selection regions.
 
@@ -187,13 +202,7 @@ def compute_selection_regions(
     ``rf_params`` may override any default ``RandomForestRegressor`` parameter.
     """
     raw_seeds = tuple(dataset_seeds)
-    if any(
-        isinstance(seed, (bool, np.bool_))
-        or not isinstance(seed, (int, np.integer))
-        for seed in raw_seeds
-    ):
-        raise TypeError("Every dataset seed must be an integer.")
-    seeds = tuple(int(seed) for seed in raw_seeds)
+    seeds = tuple(_validate_seed("dataset seed", seed) for seed in raw_seeds)
     if not seeds:
         raise ValueError("dataset_seeds must contain at least one seed.")
     for name, value in {
@@ -221,18 +230,19 @@ def compute_selection_regions(
         or selection_decimals < 0
     ):
         raise ValueError("selection_decimals must be a nonnegative integer.")
-    if (
-        not np.isscalar(tail_probability)
-        or not np.isfinite(tail_probability)
-        or not 0.0 < tail_probability < 1.0
-    ):
+    if not np.isscalar(tail_probability) or not np.isfinite(tail_probability) or not 0.0 < tail_probability < 1.0:
         raise ValueError("tail_probability must lie strictly between 0 and 1.")
+    _validate_positive_finite("boundary_tol", boundary_tol)
     if proposal_pilot_iters < 0 or proposal_pilot_samples < 1:
         raise ValueError(
             "proposal_pilot_iters must be nonnegative and "
             "proposal_pilot_samples positive."
         )
     _validate_selection_event(selection_event)
+    _validate_target_rule(target_rule)
+    if selection_event == "same_target" and target_rule != "uniform_from_selected":
+        raise ValueError("same_target requires target_rule='uniform_from_selected'.")
+    target_seed = _validate_seed("target_seed", target_seed)
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
     resolved_rf_params = _resolve_rf_params(rf_params)
@@ -246,16 +256,17 @@ def compute_selection_regions(
 
     def select_response(X, response):
         if resolved_selector is not None:
-            first = np.asarray(
-                resolved_selector.select(X, response, k_select).selected_features,
-                dtype=int,
-            )
+            first_result = resolved_selector.select(X, response, k_select)
+            first = np.asarray(first_result.selected_features, dtype=int)
+            ranking = np.asarray(first_result.ranking, dtype=int)
             if not isinstance(resolved_selector, ShapSelector):
-                second = np.asarray(
-                    resolved_selector.select(X, response, k_select).selected_features,
-                    dtype=int,
-                )
-                if not np.array_equal(first, second):
+                second_result = resolved_selector.select(X, response, k_select)
+                second = np.asarray(second_result.selected_features, dtype=int)
+                second_ranking = np.asarray(second_result.ranking, dtype=int)
+                if not (
+                    np.array_equal(first, second)
+                    and np.array_equal(ranking, second_ranking)
+                ):
                     raise ValueError(
                         "Custom selector is not deterministic for repeated identical "
                         "inputs. Fix and condition on its randomness before computing "
@@ -266,29 +277,51 @@ def compute_selection_regions(
                 or np.unique(first).size != k_select
                 or np.any(first < 0)
                 or np.any(first >= X.shape[1])
+                or ranking.shape != (X.shape[1],)
+                or set(ranking.tolist()) != set(range(X.shape[1]))
+                or not np.array_equal(first, ranking[:k_select])
             ):
                 raise ValueError(
-                    "selector selected_features must contain k_select distinct "
-                    "valid feature indices."
+                    "selector must return a complete ranking whose first k_select "
+                    "entries are distinct valid selected feature indices."
                 )
-            return first
-        return _select_features(
+            return first, ranking
+        importance = _tree_shap_importance(
             X,
             response,
-            k_select,
             selection_decimals,
             rf_params=resolved_rf_params,
         )
+        ranking = _top_k(importance, importance.size)
+        return ranking[:k_select].copy(), ranking
 
     results: list[SelectionRegionResult] = []
     for dataset_number, seed in enumerate(seeds, start=1):
         rng = np.random.default_rng(seed)
         X, response = _generate_null_dataset(rng, n_samples, n_features)
 
-        selected_features = select_response(X, response)
+        selected_features, observed_ranking = select_response(X, response)
         observed_selected = tuple(int(value) for value in selected_features)
-        for selection_position, selected_feature in enumerate(selected_features, start=1):
+        auxiliary_u = None
+        observed_target = None
+        if target_rule == "uniform_from_selected":
+            target_rng = np.random.default_rng(
+                np.random.SeedSequence([int(target_seed), int(seed)])
+            )
+            auxiliary_u = float(target_rng.random())
+            observed_target = target_from_selected_set(
+                observed_selected, auxiliary_u
+            )
+            tested_features = (observed_target,)
+        else:
+            tested_features = observed_selected
+        position_by_feature = {
+            int(feature): position
+            for position, feature in enumerate(selected_features, start=1)
+        }
+        for selected_feature in tested_features:
             feature = int(selected_feature)
+            selection_position = position_by_feature[feature]
             basis = _spline_effect_basis(X[:, feature])
             rank = int(basis.shape[1])
             t_obs, projected = _chi_statistic(response, basis)
@@ -310,12 +343,15 @@ def compute_selection_regions(
                 z = float(z)
                 if z not in cache:
                     candidate = orthogonal + SIMULATION_SIGMA * direction * z
-                    selected = select_response(X, candidate)
+                    selected, candidate_ranking = select_response(X, candidate)
                     cache[z] = selection_event_holds(
                         selected,
                         observed_selected,
                         feature,
                         selection_event,
+                        auxiliary_u=auxiliary_u,
+                        ranking=candidate_ranking,
+                        observed_ranking=observed_ranking,
                     )
                 return cache[z]
 
@@ -345,7 +381,11 @@ def compute_selection_regions(
                 if probability > 0.0
                 else np.inf
             )
-            adaptation_seed = seed + 10_000 + selection_position - 1
+            adaptation_seed = int(
+                np.random.SeedSequence(
+                    [seed, selection_position, 10_000]
+                ).generate_state(1, dtype=np.uint32)[0]
+            )
             adapted_mean, adapted_sd = _adapt_proposal(
                 t_obs,
                 rank,
@@ -384,6 +424,14 @@ def compute_selection_regions(
                     * (2**grid_refinements)
                     + 1,
                     grid_refinements=grid_refinements,
+                    target_rule=target_rule,
+                    auxiliary_u=auxiliary_u,
+                    observed_target_feature=observed_target,
+                    target_seed=(
+                        int(target_seed)
+                        if target_rule == "uniform_from_selected"
+                        else None
+                    ),
                 )
             )
     return results

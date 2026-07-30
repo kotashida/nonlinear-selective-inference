@@ -8,6 +8,7 @@ from si_shap.selection import (
     _top_k,
     ShapSelector,
     selection_event_holds,
+    target_from_selected_set,
 )
 
 
@@ -61,8 +62,46 @@ def test_exact_set_is_unordered_but_exact_ranking_is_ordered():
 
     assert selection_event_holds(reversed_candidate, observed, 2, "exact_set")
     assert not selection_event_holds(
-        reversed_candidate, observed, 2, "exact_ranking"
+        reversed_candidate,
+        observed,
+        2,
+        "exact_ranking",
+        ranking=[5, 2, 0, 1, 3, 4],
+        observed_ranking=[2, 5, 0, 1, 3, 4],
     )
+
+
+def test_exact_ranking_compares_features_below_the_top_k():
+    with pytest.raises(ValueError, match="complete candidate"):
+        selection_event_holds([0, 1], [0, 1], 0, "exact_ranking")
+    assert not selection_event_holds(
+        [0, 1],
+        [0, 1],
+        0,
+        "exact_ranking",
+        ranking=[0, 1, 3, 2],
+        observed_ranking=[0, 1, 2, 3],
+    )
+
+
+def test_same_target_reuses_fixed_auxiliary_randomness():
+    observed = [1, 3, 5, 6]
+    auxiliary_u = 0.45
+
+    assert target_from_selected_set(observed, auxiliary_u) == 3
+    assert selection_event_holds([3], observed, 3, "same_target", auxiliary_u)
+    assert selection_event_holds(
+        [1, 2, 3, 4, 5], observed, 3, "same_target", auxiliary_u
+    )
+    assert not selection_event_holds(
+        [1, 2, 4, 5], observed, 3, "same_target", auxiliary_u
+    )
+
+
+@pytest.mark.parametrize(("selected", "u"), [([], 0.5), ([1], -0.1), ([1], 1.0)])
+def test_target_from_selected_set_rejects_invalid_inputs(selected, u):
+    with pytest.raises(ValueError):
+        target_from_selected_set(selected, u)
 
 
 def test_stochastic_estimator_requires_fixed_random_state():
@@ -98,5 +137,5 @@ def test_shap_selector_explicitly_rejects_multioutput_shap_values():
         RandomForestRegressor(n_estimators=3, max_depth=2, random_state=42)
     )
 
-    with pytest.raises(ValueError, match="Unexpected SHAP shape|single-output"):
+    with pytest.raises(ValueError, match="one-dimensional responses"):
         selector.select(X, response, 1)
