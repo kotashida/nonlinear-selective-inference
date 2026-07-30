@@ -30,6 +30,16 @@ def _parse_rf_parameter(argument):
     return name, value
 
 
+def _rf_parameters(arguments):
+    """Return unique Random Forest overrides from NAME=VALUE pairs."""
+    parameters = {}
+    for name, value in arguments:
+        if name in parameters:
+            raise ValueError(f"Random Forest parameter {name!r} was repeated.")
+        parameters[name] = value
+    return parameters
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-iters", type=int, default=1)
@@ -55,6 +65,14 @@ def parse_args(argv=None):
     parser.add_argument("--max-final-samples", type=int, default=800)
     parser.add_argument("--min-denominator-ess", type=float, default=80.0)
     parser.add_argument("--min-tail-ess", type=float, default=15.0)
+    parser.add_argument(
+        "--stop-when-ess-met",
+        action="store_true",
+        help=(
+            "enable exploratory ESS-based early stopping; the default uses the "
+            "full fixed final-sample budget"
+        ),
+    )
     parser.add_argument(
         "--rf-param",
         action="append",
@@ -83,7 +101,7 @@ def _p_values_frame(result):
 
 def main(argv=None):
     args = parse_args(argv)
-    rf_params = dict(args.rf_param)
+    rf_params = _rf_parameters(args.rf_param)
 
     result = run_simulation(
         n_iters=args.n_iters,
@@ -102,6 +120,7 @@ def main(argv=None):
         rf_params=rf_params,
         selection_event=args.selection_event,
         multiplicity=args.multiplicity,
+        stop_when_ess_met=args.stop_when_ess_met,
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -125,18 +144,29 @@ def main(argv=None):
                 "min_tail_ess": args.min_tail_ess,
                 "selection_event": args.selection_event,
                 "multiplicity": args.multiplicity,
+                "stop_when_ess_met": args.stop_when_ess_met,
             },
             file,
             indent=2,
             sort_keys=True,
         )
 
+    reported_p_value_column = (
+        "raw_selective_p_value"
+        if args.multiplicity == "none"
+        else "adjusted_selective_p_value"
+    )
+    if reported_p_value_column not in result["ais_diagnostics"]:
+        reported_p_value_column = "p_value"
+    result["ais_diagnostics"]["reported_p_value"] = result["ais_diagnostics"][
+        reported_p_value_column
+    ]
     columns = [
         "iteration",
         "feature",
         "rank",
         "t_obs",
-        "p_value",
+        "reported_p_value",
         "status",
         "proposals",
         "selected_samples",

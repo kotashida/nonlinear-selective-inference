@@ -5,6 +5,7 @@ from si_shap.inference import (
     _chi_statistic,
     _defensive_mixture_logpdf,
     _effective_sample_size,
+    _run_ais,
     _spline_effect_basis,
     _truncated_normal_logpdf,
 )
@@ -55,3 +56,45 @@ def test_defensive_mixture_logpdf_matches_weighted_components():
     )
 
     np.testing.assert_allclose(density, expected)
+
+
+def test_run_ais_matches_analytic_truncated_chi_probability_with_fixed_budget():
+    expected = stats.chi.sf(2.0, df=3) / stats.chi.sf(1.0, df=3)
+
+    estimate, diagnostics = _run_ais(
+        2.0,
+        3,
+        lambda z: z >= 1.0,
+        np.random.default_rng(2026),
+        pilot_iters=2,
+        pilot_samples=100,
+        final_batch_size=500,
+        max_final_samples=4000,
+        min_denominator_ess=200,
+        min_tail_ess=80,
+    )
+
+    assert diagnostics["status"] == "ok"
+    assert diagnostics["sampling_mode"] == "fixed_budget"
+    assert diagnostics["proposals"] == 4000
+    assert abs(estimate - expected) < 4.0 * diagnostics["mc_se"]
+    assert diagnostics["mc_ci_95_lower"] <= estimate <= diagnostics["mc_ci_95_upper"]
+
+
+def test_run_ais_early_stopping_is_explicitly_labeled():
+    _, diagnostics = _run_ais(
+        1.0,
+        3,
+        lambda _z: True,
+        np.random.default_rng(11),
+        pilot_iters=0,
+        pilot_samples=1,
+        final_batch_size=100,
+        max_final_samples=1000,
+        min_denominator_ess=1,
+        min_tail_ess=1,
+        stop_when_ess_met=True,
+    )
+
+    assert diagnostics["sampling_mode"] == "ess_early_stopping"
+    assert diagnostics["proposals"] < 1000

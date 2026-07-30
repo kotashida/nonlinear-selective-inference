@@ -277,6 +277,21 @@ def test_generate_power_dataset_is_reproducible():
     np.testing.assert_array_equal(first[1], second[1])
 
 
+def test_power_dataset_can_return_the_fixed_design_mean():
+    X, response, mean = power._generate_power_dataset(
+        np.random.default_rng(123),
+        30,
+        4,
+        (0,),
+        0.75,
+        return_mean=True,
+    )
+
+    assert X.shape == (30, 4)
+    assert response.shape == mean.shape == (30,)
+    assert not np.allclose(mean, 0.0)
+
+
 @pytest.mark.parametrize(
     ("signal_features", "signal_strength", "selection_events", "error"),
     [
@@ -344,6 +359,10 @@ def test_comparison_pairs_data_and_reports_power_difference(monkeypatch):
     assert inclusion["signal_selection_rate"] == 1.0
     assert result["comparisons"].loc[0, "power_difference"] == 1.0
     assert result["comparisons"].loc[0, "n_complete_pairs"] == 2
+    assert "converged_non_signal_rejection_rate" in result["summary"]
+    assert "converged_fixed_design_null_rejection_rate" in result["summary"]
+    assert "fixed_design_null" in result["feature_results"]
+    assert "null_projection_norm" in result["feature_results"]
 
     for first, second in zip(calls[::2], calls[1::2]):
         np.testing.assert_array_equal(first["X"], second["X"])

@@ -16,6 +16,21 @@ class FixedSelector:
         return {"selector": "fixed-test-selector"}
 
 
+class AlternatingSelector(FixedSelector):
+    def __init__(self):
+        self.calls = 0
+
+    def select(self, X, response, k_select):
+        result = super().select(X, response, k_select)
+        self.calls += 1
+        if self.calls % 2 == 0:
+            ranking = result.ranking[::-1].copy()
+            return SelectionResult(
+                ranking[:k_select], result.importance, ranking
+            )
+        return result
+
+
 def _data():
     rng = np.random.default_rng(7)
     return rng.normal(size=(30, 4)), rng.normal(size=30)
@@ -78,6 +93,28 @@ def test_public_api_requires_known_sigma():
         )
 
 
+def test_public_api_rejects_boolean_seed_and_noninteger_sample_counts():
+    X, y = _data()
+    with pytest.raises(TypeError, match="ais_seed"):
+        selective_inference(
+            X,
+            y,
+            k_select=1,
+            sigma=1.0,
+            selector=FixedSelector(),
+            ais_seed=True,
+        )
+    with pytest.raises(TypeError, match="pilot_samples"):
+        selective_inference(
+            X,
+            y,
+            k_select=1,
+            sigma=1.0,
+            selector=FixedSelector(),
+            pilot_samples=2.5,
+        )
+
+
 def test_multiplicity_adjustments_preserve_failures():
     values = np.array([0.01, 0.04, np.nan])
 
@@ -85,3 +122,27 @@ def test_multiplicity_adjustments_preserve_failures():
         adjust_p_values(values, "bonferroni")[:2], [0.03, 0.12]
     )
     assert np.all(np.isnan(adjust_p_values(values, "holm")))
+
+
+def test_public_api_rejects_nondeterministic_custom_selector():
+    X, y = _data()
+
+    with pytest.raises(ValueError, match="not deterministic"):
+        selective_inference(
+            X, y, k_select=1, sigma=1.0, selector=AlternatingSelector()
+        )
+
+
+def test_holm_is_rejected_for_feature_inclusion_event():
+    X, y = _data()
+
+    with pytest.raises(ValueError, match="Holm adjustment is not implemented"):
+        selective_inference(
+            X,
+            y,
+            k_select=2,
+            sigma=1.0,
+            selector=FixedSelector(),
+            selection_event="feature_inclusion",
+            multiplicity="holm",
+        )

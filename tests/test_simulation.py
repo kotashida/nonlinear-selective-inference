@@ -1,6 +1,9 @@
 import numpy as np
+import pandas as pd
 import pytest
 
+from si_shap import simulation
+from si_shap.selection import SelectionResult
 from si_shap.simulation import (
     _generate_null_dataset,
     _method_summary,
@@ -23,6 +26,13 @@ def test_validate_inputs_rejects_invalid_settings(arguments):
         _validate_inputs(*arguments)
 
 
+def test_validate_inputs_rejects_noninteger_counts():
+    with pytest.raises(TypeError, match="n_iters"):
+        _validate_inputs(1.5, 100, 10, 1, 0.05)
+    with pytest.raises(TypeError, match="k_select"):
+        _validate_inputs(1, 100, 10, True, 0.05)
+
+
 def test_method_summary_reports_failures_without_silently_estimating_fpr():
     summary, converged = _method_summary(
         "Selective SHAP (AIS)",
@@ -41,3 +51,71 @@ def test_generate_null_dataset_is_reproducible():
 
     np.testing.assert_array_equal(first[0], second[0])
     np.testing.assert_array_equal(first[1], second[1])
+
+
+def test_method_summary_reports_global_null_family_metrics():
+    summary, _ = _method_summary(
+        "method",
+        [np.array([0.01, 0.9]), np.array([0.2, 0.3])],
+        alpha=0.05,
+    )
+
+    assert summary["fpr"] == 0.25
+    assert summary["familywise_error_rate"] == 0.5
+    assert summary["false_discovery_rate"] == 0.5
+    assert summary["mean_rejections"] == 0.5
+    assert np.isfinite(summary["fpr_ci_95_lower"])
+    assert 0.0 <= summary["familywise_error_ci_95_lower"] <= 0.5
+    assert 0.5 <= summary["familywise_error_ci_95_upper"] <= 1.0
+    assert np.isfinite(summary["uniform_ks_statistic"])
+
+
+class FixedSelector:
+    def select(self, X, response, k_select):
+        ranking = np.arange(X.shape[1])
+        return SelectionResult(
+            ranking[:k_select],
+            np.arange(X.shape[1], 0, -1, dtype=float),
+            ranking,
+        )
+
+    def get_settings(self):
+        return {"selector": "fixed"}
+
+
+def test_run_simulation_uses_requested_adjusted_p_values(monkeypatch):
+    def fake_selective_inference(X, y, **kwargs):
+        return {
+            "observed_selected_features": np.array([0, 1]),
+            "feature_results": pd.DataFrame(
+                {
+                    "feature": [0, 1],
+                    "test_rank": [3, 3],
+                    "unadjusted_p_value": [0.01, 0.4],
+                    "raw_selective_p_value": [0.01, 0.4],
+                    "adjusted_selective_p_value": [0.02, 0.8],
+                    "p_value": [0.01, 0.4],
+                    "status": ["ok", "ok"],
+                }
+            ),
+        }
+
+    monkeypatch.setattr(simulation, "selective_inference", fake_selective_inference)
+    result = simulation.run_simulation(
+        1,
+        20,
+        3,
+        2,
+        alpha=0.015,
+        selector=FixedSelector(),
+        multiplicity="bonferroni",
+    )
+
+    np.testing.assert_allclose(
+        result["p_values"]["Selective SHAP (AIS)"], [0.02, 0.8]
+    )
+    # The unadjusted and random baselines receive the same family-size
+    # correction rather than being compared on a different p-value scale.
+    assert set(result["summary"]["p_value_scale"]) == {
+        "multiplicity_adjusted"
+    }

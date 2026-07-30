@@ -41,6 +41,12 @@ PRESETS = {
         "pilot_samples": 40,
         "max_final_samples": 1600,
     },
+    "calibrated_plus": {
+        "n_iters": 100,
+        "signal_strength": 0.3,
+        "pilot_samples": 200,
+        "max_final_samples": 6400,
+    },
     "regulated": {
         "n_iters": 100,
         "signal_strength": 0.3,
@@ -158,6 +164,14 @@ def parse_args(argv=None):
     )
     parser.add_argument("--min-denominator-ess", type=float, default=80.0)
     parser.add_argument("--min-tail-ess", type=float, default=15.0)
+    parser.add_argument(
+        "--stop-when-ess-met",
+        action="store_true",
+        help=(
+            "enable exploratory ESS-based early stopping; the default uses the "
+            "full fixed final-sample budget"
+        ),
+    )
     parser.add_argument(
         "--rf-param",
         action="append",
@@ -391,6 +405,7 @@ def main(argv=None):
         min_tail_ess=args.min_tail_ess,
         rf_params=rf_params,
         multiplicity=args.multiplicity,
+        stop_when_ess_met=args.stop_when_ess_met,
     )
     result["settings"]["run_preset"] = args.preset
     result["settings"]["runtime_metadata"] = _runtime_metadata()

@@ -51,7 +51,11 @@ def _top_k(scores, k):
         raise ValueError(
             "SHAP importance scores must be a finite one-dimensional array."
         )
-    if not isinstance(k, (int, np.integer)) or not 1 <= k <= scores.size:
+    if (
+        isinstance(k, (bool, np.bool_))
+        or not isinstance(k, (int, np.integer))
+        or not 1 <= k <= scores.size
+    ):
         raise ValueError("k must satisfy 1 <= k <= the number of scores.")
     return np.lexsort((np.arange(scores.size), -scores))[:k]
 
@@ -143,7 +147,11 @@ class ShapSelector:
     """Clone and refit a tree estimator before every Tree SHAP selection."""
 
     def __init__(self, estimator=None, *, selection_decimals: int = 10):
-        if not isinstance(selection_decimals, int) or selection_decimals < 0:
+        if (
+            isinstance(selection_decimals, (bool, np.bool_))
+            or not isinstance(selection_decimals, (int, np.integer))
+            or selection_decimals < 0
+        ):
             raise ValueError("selection_decimals must be a nonnegative integer.")
         if estimator is None:
             estimator = RandomForestRegressor(**RF_PARAMS)

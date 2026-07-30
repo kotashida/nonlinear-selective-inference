@@ -7,10 +7,13 @@ from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 from tqdm.auto import tqdm
 
 from .api import selective_inference
+from .inference import _spline_effect_basis
 from .selection import (
+    ShapSelector,
     _resolve_rf_params,
     _validate_selection_event,
     make_selector,
@@ -19,6 +22,24 @@ from .simulation import SIMULATION_SIGMA, _validate_inputs
 
 
 DEFAULT_SELECTION_EVENTS = ("exact_set", "feature_inclusion")
+
+
+class _MemoizedSelector:
+    """Cache deterministic selector results within one fixed-X iteration."""
+
+    def __init__(self, selector):
+        self.selector = selector
+        self.cache = {}
+
+    def select(self, X, response, k_select):
+        response_array = np.ascontiguousarray(response, dtype=float)
+        key = (int(k_select), response_array.tobytes())
+        if key not in self.cache:
+            self.cache[key] = self.selector.select(X, response_array, k_select)
+        return self.cache[key]
+
+    def get_settings(self):
+        return {**dict(self.selector.get_settings()), "memoized_within_iteration": True}
 
 
 def _validate_power_inputs(
@@ -79,7 +100,9 @@ def _generate_power_dataset(
     n_features: int,
     signal_features: Sequence[int],
     signal_strength: float,
-) -> tuple[np.ndarray, np.ndarray]:
+    *,
+    return_mean: bool = False,
+) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Generate independent Gaussian features with smooth nonlinear signals.
 
     Each signal feature contributes a centered effect with empirical standard
@@ -90,6 +113,8 @@ def _generate_power_dataset(
     for feature in signal_features:
         mean_response += signal_strength * _nonlinear_effect(X[:, feature])
     response = mean_response + rng.standard_normal(n_samples) * SIMULATION_SIGMA
+    if return_mean:
+        return X, response, mean_response
     return X, response
 
 
@@ -134,14 +159,34 @@ def _summarize_event_power(
         else np.nan
     )
 
-    null_results = feature_results[~feature_results["is_signal"]]
-    failed_null = int(null_results["failed"].sum()) if not null_results.empty else 0
-    converged_null = null_results[~null_results["failed"]]
-    converged_null_rejection_rate = (
-        float(converged_null["rejected"].mean())
-        if not converged_null.empty
+    non_signal_results = feature_results[~feature_results["is_signal"]]
+    failed_non_signal = (
+        int(non_signal_results["failed"].sum())
+        if not non_signal_results.empty
+        else 0
+    )
+    converged_non_signal = non_signal_results[~non_signal_results["failed"]]
+    converged_non_signal_rejection_rate = (
+        float(converged_non_signal["rejected"].mean())
+        if not converged_non_signal.empty
         else np.nan
     )
+    fixed_null_results = feature_results[feature_results["fixed_design_null"]]
+    failed_fixed_null = (
+        int(fixed_null_results["failed"].sum())
+        if not fixed_null_results.empty
+        else 0
+    )
+    converged_fixed_null = fixed_null_results[~fixed_null_results["failed"]]
+    converged_fixed_null_rejection_rate = (
+        float(converged_fixed_null["rejected"].mean())
+        if not converged_fixed_null.empty
+        else np.nan
+    )
+    total_signal_tests = n_iters * n_signal_features
+    rejected_count = int(np.sum(rejected_signal))
+    power_lower_bound = rejected_count / total_signal_tests
+    power_upper_bound = (rejected_count + n_failed_signal) / total_signal_tests
 
     return {
         "selection_event": selection_event,
@@ -153,20 +198,35 @@ def _summarize_event_power(
             converged_conditional_power if strict_complete else np.nan
         ),
         "converged_conditional_power": converged_conditional_power,
+        "power_lower_bound": power_lower_bound,
+        "power_upper_bound": power_upper_bound,
         "signal_selection_rate": float(np.mean(selected_signal)),
         "signal_test_failure_rate": (
             n_failed_signal / n_selected_signal if n_selected_signal else 0.0
         ),
-        "converged_null_rejection_rate": converged_null_rejection_rate,
-        "null_test_failure_rate": (
-            failed_null / len(null_results) if len(null_results) else 0.0
+        "converged_non_signal_rejection_rate": (
+            converged_non_signal_rejection_rate
+        ),
+        "non_signal_test_failure_rate": (
+            failed_non_signal / len(non_signal_results)
+            if len(non_signal_results)
+            else 0.0
+        ),
+        "converged_fixed_design_null_rejection_rate": (
+            converged_fixed_null_rejection_rate
+        ),
+        "fixed_design_null_test_failure_rate": (
+            failed_fixed_null / len(fixed_null_results)
+            if len(fixed_null_results)
+            else 0.0
         ),
         "n_iterations": n_iters,
         "n_complete_iterations": int(iteration_complete.sum()),
         "n_signal_features": n_signal_features,
         "n_selected_signal_tests": n_selected_signal,
         "n_converged_signal_tests": n_selected_signal - n_failed_signal,
-        "n_selected_null_tests": int(len(null_results)),
+        "n_selected_non_signal_tests": int(len(non_signal_results)),
+        "n_selected_fixed_design_null_tests": int(len(fixed_null_results)),
         "alpha": alpha,
     }
 
@@ -215,6 +275,11 @@ def _paired_comparisons(
             if iteration_difference.size > 1
             else np.nan
         )
+        critical_value = (
+            float(stats.t.ppf(0.975, df=iteration_difference.size - 1))
+            if iteration_difference.size > 1
+            else np.nan
+        )
         baseline_power = summary_by_event.loc[baseline, "power"]
         comparison_power = summary_by_event.loc[comparison_event, "power"]
         strict_difference = (
@@ -229,8 +294,17 @@ def _paired_comparisons(
                 "power_difference": strict_difference,
                 "converged_power_difference": converged_difference,
                 "paired_simulation_se": paired_se,
-                "ci_95_lower": converged_difference - 1.96 * paired_se,
-                "ci_95_upper": converged_difference + 1.96 * paired_se,
+                "ci_95_lower": float(
+                    max(-1.0, converged_difference - critical_value * paired_se)
+                )
+                if np.isfinite(critical_value) and np.isfinite(converged_difference)
+                else np.nan,
+                "ci_95_upper": float(
+                    min(1.0, converged_difference + critical_value * paired_se)
+                )
+                if np.isfinite(critical_value) and np.isfinite(converged_difference)
+                else np.nan,
+                "ci_method": "paired_t",
                 "n_complete_pairs": int(iteration_difference.size),
             }
         )
@@ -259,6 +333,7 @@ def compare_selection_event_power(
     estimator=None,
     selector=None,
     multiplicity: str = "none",
+    stop_when_ess_met: bool = False,
 ):
     """Compare conditioning-event power on identical alternative datasets.
 
@@ -282,8 +357,22 @@ def compare_selection_event_power(
             UserWarning,
             stacklevel=2,
         )
-    if not isinstance(selection_decimals, int) or selection_decimals < 0:
+    if (
+        isinstance(selection_decimals, (bool, np.bool_))
+        or not isinstance(selection_decimals, (int, np.integer))
+        or selection_decimals < 0
+    ):
         raise ValueError("selection_decimals must be a nonnegative integer.")
+    for name, value in {
+        "pilot_iters": pilot_iters,
+        "pilot_samples": pilot_samples,
+        "final_batch_size": final_batch_size,
+        "max_final_samples": max_final_samples,
+    }.items():
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, np.integer)
+        ):
+            raise TypeError(f"{name} must be an integer.")
     if pilot_iters < 0 or pilot_samples < 1:
         raise ValueError("pilot_iters must be nonnegative and pilot_samples positive.")
     if final_batch_size < 1 or max_final_samples < 1:
@@ -294,6 +383,10 @@ def compare_selection_event_power(
         raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
+    if isinstance(seed, (bool, np.bool_)) or not isinstance(seed, (int, np.integer)):
+        raise TypeError("seed must be an integer.")
+    if not isinstance(stop_when_ess_met, (bool, np.bool_)):
+        raise TypeError("stop_when_ess_met must be boolean.")
 
     resolved_rf_params = (
         _resolve_rf_params(rf_params)
@@ -320,14 +413,20 @@ def compare_selection_event_power(
         tqdm(iteration_seeds, desc="Comparing selection events"), start=1
     ):
         data_seed, ais_seed = iteration_seed.spawn(2)
-        X, response = _generate_power_dataset(
+        X, response, mean_response = _generate_power_dataset(
             np.random.default_rng(data_seed),
             n_samples,
             n_features,
             signal_features,
             signal_strength,
+            return_mean=True,
         )
         shared_ais_seed = int(ais_seed.generate_state(1, dtype=np.uint32)[0])
+        iteration_selector = (
+            _MemoizedSelector(resolved_selector)
+            if isinstance(resolved_selector, ShapSelector)
+            else resolved_selector
+        )
         observed_selected = None
         event_results = {}
         for selection_event in selection_events:
@@ -336,7 +435,7 @@ def compare_selection_event_power(
                 response,
                 k_select=k_select,
                 sigma=SIMULATION_SIGMA,
-                selector=resolved_selector,
+                selector=iteration_selector,
                 selection_event=selection_event,
                 multiplicity=multiplicity,
                 ais_seed=shared_ais_seed,
@@ -346,6 +445,7 @@ def compare_selection_event_power(
                 max_final_samples=max_final_samples,
                 min_denominator_ess=min_denominator_ess,
                 min_tail_ess=min_tail_ess,
+                stop_when_ess_met=stop_when_ess_met,
             )
             selected = tuple(
                 int(feature)
@@ -364,6 +464,18 @@ def compare_selection_event_power(
             event_frame["is_signal"] = event_frame["feature"].isin(
                 signal_feature_set
             )
+            projection_norms = []
+            fixed_design_null = []
+            null_tolerance = np.sqrt(np.finfo(float).eps) * max(
+                1.0, float(np.linalg.norm(mean_response))
+            )
+            for selected_feature in event_frame["feature"]:
+                basis = _spline_effect_basis(X[:, int(selected_feature)])
+                projection_norm = float(np.linalg.norm(basis.T @ mean_response))
+                projection_norms.append(projection_norm)
+                fixed_design_null.append(projection_norm <= null_tolerance)
+            event_frame["null_projection_norm"] = projection_norms
+            event_frame["fixed_design_null"] = fixed_design_null
             event_frame["p_value_used"] = event_frame[p_value_column]
             event_frame["failed"] = ~np.isfinite(event_frame["p_value_used"])
             event_frame["rejected"] = (
@@ -441,11 +553,15 @@ def compare_selection_event_power(
                 None if resolved_rf_params is None else resolved_rf_params.copy()
             ),
             "selector_settings": dict(resolved_selector.get_settings()),
+            "memoized_selector_within_iteration": isinstance(
+                resolved_selector, ShapSelector
+            ),
             "pilot_iters": pilot_iters,
             "pilot_samples": pilot_samples,
             "final_batch_size": final_batch_size,
             "max_final_samples": max_final_samples,
             "min_denominator_ess": min_denominator_ess,
             "min_tail_ess": min_tail_ess,
+            "stop_when_ess_met": bool(stop_when_ess_met),
         },
     }

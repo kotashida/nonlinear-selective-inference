@@ -27,6 +27,16 @@ def _parse_rf_parameter(argument):
     return name, value
 
 
+def _rf_parameters(arguments):
+    """Return unique Random Forest overrides from NAME=VALUE pairs."""
+    parameters = {}
+    for name, value in arguments:
+        if name in parameters:
+            raise ValueError(f"Random Forest parameter {name!r} was repeated.")
+        parameters[name] = value
+    return parameters
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -64,7 +74,7 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
-    rf_params = dict(args.rf_param)
+    rf_params = _rf_parameters(args.rf_param)
     output_directory = Path("outputs") / "shap_selection_regions"
     output_directory.mkdir(parents=True, exist_ok=True)
 
@@ -75,6 +85,7 @@ def main():
         k_select=args.k_select,
         selection_decimals=10,
         grid_size=1001,
+        grid_refinements=1,
         boundary_tol=1e-8,
         tail_probability=1e-8,
         rf_params=rf_params,

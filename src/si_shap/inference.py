@@ -158,7 +158,15 @@ def _run_ais(
     max_final_samples=800,
     min_denominator_ess=80.0,
     min_tail_ess=15.0,
+    stop_when_ess_met=False,
 ):
+    """Estimate the selected chi-tail ratio with a defensive proposal.
+
+    The confirmatory default uses the full, predeclared final-sample budget.
+    ``stop_when_ess_met=True`` retains the former exploratory early-stopping
+    behavior, but its data-dependent sample size should not be used as evidence
+    that the resulting estimate is an exact finite-sample p-value.
+    """
     adapted_mean, adapted_sd = _adapt_proposal(
         t_obs,
         rank,
@@ -206,7 +214,11 @@ def _run_ais(
         tail = all_z >= t_obs
         denominator_ess = _effective_sample_size(weights)
         tail_ess = _effective_sample_size(weights[tail])
-        if denominator_ess >= min_denominator_ess and tail_ess >= min_tail_ess:
+        if (
+            stop_when_ess_met
+            and denominator_ess >= min_denominator_ess
+            and tail_ess >= min_tail_ess
+        ):
             break
 
     if not selected_log_weight_batches:
@@ -218,6 +230,11 @@ def _run_ais(
             "denominator_ess": 0.0,
             "tail_ess": 0.0,
             "mc_se": np.nan,
+            "mc_ci_95_lower": np.nan,
+            "mc_ci_95_upper": np.nan,
+            "sampling_mode": (
+                "ess_early_stopping" if stop_when_ess_met else "fixed_budget"
+            ),
         }
 
     all_z = np.concatenate(selected_z_batches)
@@ -237,6 +254,11 @@ def _run_ais(
             "denominator_ess": denominator_ess,
             "tail_ess": tail_ess,
             "mc_se": np.nan,
+            "mc_ci_95_lower": np.nan,
+            "mc_ci_95_upper": np.nan,
+            "sampling_mode": (
+                "ess_early_stopping" if stop_when_ess_met else "fixed_budget"
+            ),
         }
 
     p_value = float(np.sum(weights * tail) / np.sum(weights))
@@ -244,12 +266,21 @@ def _run_ais(
         np.sum(weights**2 * (tail.astype(float) - p_value) ** 2)
         / np.sum(weights) ** 2
     )
-    return np.clip(p_value, 0.0, 1.0), {
+    p_value = float(np.clip(p_value, 0.0, 1.0))
+    mc_se = float(np.sqrt(mc_variance))
+    return p_value, {
         "status": "ok",
         "proposals": proposals,
         "selected_samples": int(all_z.size),
         "tail_samples": int(np.sum(tail)),
         "denominator_ess": denominator_ess,
         "tail_ess": tail_ess,
-        "mc_se": float(np.sqrt(mc_variance)),
+        "mc_se": mc_se,
+        # This is a normal-approximation Monte Carlo interval, not a formal
+        # selective-inference confidence bound for a self-normalized ratio.
+        "mc_ci_95_lower": float(max(0.0, p_value - 1.96 * mc_se)),
+        "mc_ci_95_upper": float(min(1.0, p_value + 1.96 * mc_se)),
+        "sampling_mode": (
+            "ess_early_stopping" if stop_when_ess_met else "fixed_budget"
+        ),
     }

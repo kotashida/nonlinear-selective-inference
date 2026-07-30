@@ -55,6 +55,13 @@ def test_compute_selection_regions_returns_each_top_k_feature(monkeypatch):
     assert [result.selected_feature for result in results] == [1, 2]
     assert [result.selection_position for result in results] == [1, 2]
     assert all(result.k_select == 2 for result in results)
+    assert all(
+        result.selection_probability
+        <= result.selection_probability_upper_bound
+        <= 1.0
+        for result in results
+    )
+    assert all(result.relative_omitted_tail_bound >= 0.0 for result in results)
     assert received_rf_params
     assert all(params["n_estimators"] == 12 for params in received_rf_params)
     assert all(params["max_depth"] == 5 for params in received_rf_params)
@@ -84,6 +91,24 @@ def test_anchor_point_preserves_a_narrow_observed_component():
     )
 
     np.testing.assert_allclose(intervals, [(1.001, 1.002)], atol=1e-6)
+
+
+def test_midpoint_refinement_can_detect_a_component_missed_by_base_grid():
+    event = lambda z: 0.36 <= z <= 0.39
+
+    coarse = find_selection_intervals(
+        event, z_max=1.0, grid_size=5, grid_refinements=0
+    )
+    refined = find_selection_intervals(
+        event,
+        z_max=1.0,
+        grid_size=5,
+        grid_refinements=1,
+        boundary_tol=1e-7,
+    )
+
+    assert coarse == ()
+    np.testing.assert_allclose(refined, [(0.36, 0.39)], atol=1e-6)
 
 
 def test_selection_probability_integrates_chi_mass_over_intervals():

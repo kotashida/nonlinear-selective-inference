@@ -23,7 +23,7 @@ def test_top_k_rejects_invalid_scores(scores):
         _top_k(scores, 1)
 
 
-@pytest.mark.parametrize("k", [0, 4, 1.5])
+@pytest.mark.parametrize("k", [0, 4, 1.5, True])
 def test_top_k_rejects_invalid_selection_sizes(k):
     with pytest.raises(ValueError, match="k must satisfy"):
         _top_k([3.0, 2.0, 1.0], k)
@@ -68,3 +68,35 @@ def test_exact_set_is_unordered_but_exact_ranking_is_ordered():
 def test_stochastic_estimator_requires_fixed_random_state():
     with pytest.raises(ValueError, match="random_state"):
         ShapSelector(RandomForestRegressor(random_state=None))
+
+
+def test_shap_selector_returns_one_deterministic_importance_per_feature():
+    rng = np.random.default_rng(17)
+    X = rng.normal(size=(24, 4))
+    y = rng.normal(size=24)
+    selector = ShapSelector(
+        RandomForestRegressor(
+            n_estimators=3, max_depth=2, random_state=42
+        )
+    )
+
+    first = selector.select(X, y, 2)
+    second = selector.select(X, y, 2)
+
+    assert first.importance.shape == (X.shape[1],)
+    assert first.ranking.shape == (X.shape[1],)
+    np.testing.assert_array_equal(first.selected_features, first.ranking[:2])
+    np.testing.assert_array_equal(first.ranking, second.ranking)
+    np.testing.assert_array_equal(first.importance, second.importance)
+
+
+def test_shap_selector_explicitly_rejects_multioutput_shap_values():
+    rng = np.random.default_rng(23)
+    X = rng.normal(size=(20, 3))
+    response = rng.normal(size=(20, 2))
+    selector = ShapSelector(
+        RandomForestRegressor(n_estimators=3, max_depth=2, random_state=42)
+    )
+
+    with pytest.raises(ValueError, match="Unexpected SHAP shape|single-output"):
+        selector.select(X, response, 1)
