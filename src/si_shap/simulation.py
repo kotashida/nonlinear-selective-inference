@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import warnings
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["POLARS_MAX_THREADS"] = "1"
 
 import numpy as np
 import pandas as pd

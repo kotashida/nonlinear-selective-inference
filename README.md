@@ -330,7 +330,7 @@ python examples/plot_selection_regions.py 101 202 303 `
     --rf-param n_estimators=100 `
     --rf-param max_depth=8 `
     --rf-param min_samples_leaf=2 `
-    --rf-param n_jobs=-1
+    --rf-param n_jobs=32
 ```
 
 Values use JSON syntax when possible. For example, use

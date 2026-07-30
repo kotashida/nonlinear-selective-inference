@@ -1,8 +1,18 @@
+import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["POLARS_MAX_THREADS"] = "1"
+
 import numpy as np
 import pytest
 from sklearn.ensemble import RandomForestRegressor
 
 from si_shap.selection import (
+    MAX_CPU_CORES,
     RF_PARAMS,
     _resolve_rf_params,
     _top_k,
@@ -46,6 +56,22 @@ def test_rf_params_override_defaults_without_mutating_inputs():
 def test_rf_params_must_be_a_mapping():
     with pytest.raises(TypeError, match="mapping or None"):
         _resolve_rf_params([("n_estimators", 12)])
+
+
+def test_rf_params_are_explicitly_limited_to_32_jobs():
+    assert MAX_CPU_CORES == 32
+    assert _resolve_rf_params(None)["n_jobs"] == MAX_CPU_CORES
+    assert _resolve_rf_params({"n_jobs": 1})["n_jobs"] == 1
+    assert _resolve_rf_params({"n_jobs": None})["n_jobs"] is None
+    with pytest.raises(ValueError, match="n_jobs must be an integer from 1 to 32"):
+        _resolve_rf_params({"n_jobs": 33})
+    with pytest.raises(ValueError, match="n_jobs must be an integer from 1 to 32"):
+        _resolve_rf_params({"n_jobs": -1})
+
+
+def test_custom_estimator_cannot_exceed_cpu_limit():
+    with pytest.raises(ValueError, match="n_jobs must be an integer from 1 to 32"):
+        ShapSelector(RandomForestRegressor(random_state=42, n_jobs=33))
 
 
 def test_exact_set_rejects_replacement_while_inclusion_accepts_it():

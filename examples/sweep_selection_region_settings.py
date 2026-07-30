@@ -10,8 +10,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import warnings
 from pathlib import Path
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["POLARS_MAX_THREADS"] = "1"
 
 import matplotlib
 
@@ -121,8 +129,10 @@ def parse_args(argv=None):
     parser.add_argument(
         "--n-jobs",
         type=int,
-        default=-1,
-        help="parallel jobs used by each forest (default: all processors)",
+        choices=range(1, 33),
+        default=32,
+        metavar="1..32",
+        help="parallel jobs used by each forest (default: 32; maximum: 32)",
     )
     parser.add_argument(
         "--output-dir",
