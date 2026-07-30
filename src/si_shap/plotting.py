@@ -132,6 +132,12 @@ def _plot_selection_region_on_axis(
     detailed_labels: bool,
 ):
     """Draw a selection region and its proposal densities on one axis."""
+    probability_upper_bound = result.selection_probability_upper_bound
+    if not np.isfinite(probability_upper_bound):
+        probability_upper_bound = min(
+            1.0,
+            result.selection_probability + result.omitted_tail_probability,
+        )
     z = np.linspace(0.0, result.z_max, 1600)
     null_density = stats.chi.pdf(z, df=result.rank)
     observed_proposal = np.exp(
@@ -194,7 +200,7 @@ def _plot_selection_region_on_axis(
         conditional_density,
         color="tab:blue",
         linewidth=2.4 if detailed_labels else 2.2,
-        label="Conditional density",
+        label="Detected-region conditional density",
     )
     axis.plot(
         z,
@@ -253,8 +259,9 @@ def _plot_selection_region_on_axis(
         f"target $x_{{{result.selected_feature}}}$, position "
         f"{result.selection_position}/{result.k_select} | "
         f"{result.selection_event.replace('_', '-')}\n"
-        f"df={result.rank}, selection probability="
-        f"{result.selection_probability:.4f}"
+        f"df={result.rank}, detected probability="
+        f"{result.selection_probability:.4f}, upper bound="
+        f"{probability_upper_bound:.4f}"
     )
     axis.set_ylabel("Density")
     axis.grid(True, linestyle=":", alpha=0.35)

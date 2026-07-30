@@ -15,6 +15,7 @@ from .inference import (
     _spline_effect_basis,
 )
 from .selection import (
+    ShapSelector,
     _resolve_rf_params,
     _select_features,
     _validate_selection_event,
@@ -50,6 +51,10 @@ class SelectionRegionResult:
     selection_event: str = "exact_set"
     selection_event_definition: str = ""
     observed_selected_features: tuple[int, ...] = ()
+    selection_probability_upper_bound: float = np.nan
+    relative_omitted_tail_bound: float = np.nan
+    effective_grid_size: int = 0
+    grid_refinements: int = 0
 
 
 def _refine_transition(
@@ -76,17 +81,21 @@ def find_selection_intervals(
     grid_size: int = 201,
     boundary_tol: float = 1e-5,
     anchor_points: Iterable[float] = (),
+    grid_refinements: int = 1,
 ) -> tuple[tuple[float, float], ...]:
     """Approximate ``{z in [0, z_max]: is_selected(z)}`` as intervals.
 
     A regular grid discovers state changes and bisection refines each detected
-    boundary.  Consequently, intervals narrower than one grid cell can be
-    missed; ``grid_size`` controls that numerical resolution.
+    boundary. ``grid_refinements`` repeatedly inserts cell midpoints before
+    transition detection. Components narrower than the final cell can still be
+    missed, so the returned intervals remain a numerical diagnostic.
     """
     if not np.isfinite(z_max) or z_max <= 0.0:
         raise ValueError("z_max must be finite and positive.")
     if not isinstance(grid_size, int) or grid_size < 2:
         raise ValueError("grid_size must be an integer of at least 2.")
+    if not isinstance(grid_refinements, int) or grid_refinements < 0:
+        raise ValueError("grid_refinements must be a nonnegative integer.")
     if not np.isfinite(boundary_tol) or boundary_tol <= 0.0:
         raise ValueError("boundary_tol must be finite and positive.")
 
@@ -97,8 +106,11 @@ def find_selection_intervals(
         or np.any(anchors > z_max)
     ):
         raise ValueError("anchor_points must be finite and lie in [0, z_max].")
+    effective_grid_size = (grid_size - 1) * (2**grid_refinements) + 1
     grid = np.unique(
-        np.concatenate((np.linspace(0.0, z_max, grid_size), anchors))
+        np.concatenate(
+            (np.linspace(0.0, z_max, effective_grid_size), anchors)
+        )
     )
     states = np.fromiter(
         (bool(is_selected(float(z))) for z in grid),
@@ -148,6 +160,7 @@ def compute_selection_regions(
     k_select: int = 1,
     selection_decimals: int = 10,
     grid_size: int = 201,
+    grid_refinements: int = 1,
     boundary_tol: float = 1e-5,
     tail_probability: float = 1e-8,
     proposal_pilot_iters: int = 3,
@@ -173,18 +186,46 @@ def compute_selection_regions(
 
     ``rf_params`` may override any default ``RandomForestRegressor`` parameter.
     """
-    seeds = tuple(int(seed) for seed in dataset_seeds)
+    raw_seeds = tuple(dataset_seeds)
+    if any(
+        isinstance(seed, (bool, np.bool_))
+        or not isinstance(seed, (int, np.integer))
+        for seed in raw_seeds
+    ):
+        raise TypeError("Every dataset seed must be an integer.")
+    seeds = tuple(int(seed) for seed in raw_seeds)
     if not seeds:
         raise ValueError("dataset_seeds must contain at least one seed.")
+    for name, value in {
+        "n_samples": n_samples,
+        "n_features": n_features,
+        "k_select": k_select,
+        "grid_size": grid_size,
+        "grid_refinements": grid_refinements,
+        "proposal_pilot_iters": proposal_pilot_iters,
+        "proposal_pilot_samples": proposal_pilot_samples,
+    }.items():
+        if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, (int, np.integer)
+        ):
+            raise TypeError(f"{name} must be an integer.")
     if n_samples <= 4:
         raise ValueError("n_samples must exceed 4.")
     if n_features < 1:
         raise ValueError("n_features must be positive.")
     if not isinstance(k_select, (int, np.integer)) or not 1 <= k_select <= n_features:
         raise ValueError("k_select must satisfy 1 <= k_select <= n_features.")
-    if not isinstance(selection_decimals, int) or selection_decimals < 0:
+    if (
+        isinstance(selection_decimals, (bool, np.bool_))
+        or not isinstance(selection_decimals, (int, np.integer))
+        or selection_decimals < 0
+    ):
         raise ValueError("selection_decimals must be a nonnegative integer.")
-    if not 0.0 < tail_probability < 1.0:
+    if (
+        not np.isscalar(tail_probability)
+        or not np.isfinite(tail_probability)
+        or not 0.0 < tail_probability < 1.0
+    ):
         raise ValueError("tail_probability must lie strictly between 0 and 1.")
     if proposal_pilot_iters < 0 or proposal_pilot_samples < 1:
         raise ValueError(
@@ -205,7 +246,32 @@ def compute_selection_regions(
 
     def select_response(X, response):
         if resolved_selector is not None:
-            return resolved_selector.select(X, response, k_select).selected_features
+            first = np.asarray(
+                resolved_selector.select(X, response, k_select).selected_features,
+                dtype=int,
+            )
+            if not isinstance(resolved_selector, ShapSelector):
+                second = np.asarray(
+                    resolved_selector.select(X, response, k_select).selected_features,
+                    dtype=int,
+                )
+                if not np.array_equal(first, second):
+                    raise ValueError(
+                        "Custom selector is not deterministic for repeated identical "
+                        "inputs. Fix and condition on its randomness before computing "
+                        "selection regions."
+                    )
+            if (
+                first.shape != (k_select,)
+                or np.unique(first).size != k_select
+                or np.any(first < 0)
+                or np.any(first >= X.shape[1])
+            ):
+                raise ValueError(
+                    "selector selected_features must contain k_select distinct "
+                    "valid feature indices."
+                )
+            return first
         return _select_features(
             X,
             response,
@@ -267,8 +333,18 @@ def compute_selection_regions(
                 grid_size=grid_size,
                 boundary_tol=boundary_tol,
                 anchor_points=(t_obs,),
+                grid_refinements=grid_refinements,
             )
             probability = selection_probability(intervals, rank)
+            omitted_tail_probability = float(stats.chi.sf(z_max, df=rank))
+            probability_upper_bound = float(
+                min(1.0, probability + omitted_tail_probability)
+            )
+            relative_omitted_tail_bound = (
+                omitted_tail_probability / probability
+                if probability > 0.0
+                else np.inf
+            )
             adaptation_seed = seed + 10_000 + selection_position - 1
             adapted_mean, adapted_sd = _adapt_proposal(
                 t_obs,
@@ -290,7 +366,7 @@ def compute_selection_regions(
                     z_max=z_max,
                     intervals=intervals,
                     selection_probability=probability,
-                    omitted_tail_probability=float(stats.chi.sf(z_max, df=rank)),
+                    omitted_tail_probability=omitted_tail_probability,
                     observed_proposal_sd=observed_sd,
                     adapted_proposal_mean=adapted_mean,
                     adapted_proposal_sd=adapted_sd,
@@ -302,6 +378,12 @@ def compute_selection_regions(
                         selection_event, feature
                     ),
                     observed_selected_features=observed_selected,
+                    selection_probability_upper_bound=probability_upper_bound,
+                    relative_omitted_tail_bound=relative_omitted_tail_bound,
+                    effective_grid_size=(grid_size - 1)
+                    * (2**grid_refinements)
+                    + 1,
+                    grid_refinements=grid_refinements,
                 )
             )
     return results

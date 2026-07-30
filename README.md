@@ -39,13 +39,15 @@ selected data. The currently supported built-in combination is a cloneable
 scikit-learn tree estimator with Tree SHAP; `RandomForestRegressor` is the
 officially tested estimator and every exposed `random_state` must be fixed.
 
-`feature_results` contains individual raw selective p-values, optional Holm or
-Bonferroni adjusted values, the event definition, denominator and tail ESS,
-Monte Carlo standard error, and convergence status. Exact-set conditioning does
+`feature_results` contains individual raw selective p-value estimates, optional
+Holm or Bonferroni adjusted values, the event definition, denominator and tail
+ESS, Monte Carlo standard error and interval, and convergence status. Exact-set conditioning does
 not itself correct multiplicity. A non-`ok` row has `NaN` as its selective
-p-value and must not be interpreted as a valid estimate. These are
-selection-adjusted p-values conditionally valid under the stated assumptions, up
-to numerical and Monte Carlo error.
+p-value and must not be interpreted as a valid estimate. These estimate
+conditionally valid selection-adjusted p-values under the stated assumptions.
+The confirmatory default uses the full predeclared AIS budget; ESS-based early
+stopping is explicitly opt-in. Self-normalized AIS remains a finite-sample
+numerical approximation, so null calibration is required before formal use.
 
 For `k_select=k`, the API returns `k` rows and selection-region visualization
 returns `k` plots: every selected feature has a distinct response path
@@ -58,28 +60,29 @@ the observed order.
 The following tree shows the current layout of source files and retained project artifacts. Local environments, caches, and intermediate build files such as `.venv/` are described later.
 
 ```text
-shap-selective-inference/
+nonlinear-selective-inference/
 ├── .gitignore
 ├── README.md
 ├── pyproject.toml
 ├── src/
 │   └── si_shap/
 │       ├── __init__.py
+│       ├── api.py
 │       ├── inference.py
 │       ├── plotting.py
+│       ├── power.py
 │       ├── selection.py
 │       ├── selection_regions.py
 │       └── simulation.py
 ├── examples/
-│   └── plot_selection_regions.py
+│   ├── compare_selection_event_power.py
+│   ├── plot_selection_regions.py
+│   ├── run_selective_inference.py
+│   └── sweep_selection_region_settings.py
 ├── notebooks/
-│   ├── unadjusted_vs_random.ipynb
-│   └── si_vs_unadjusted_vs_random.ipynb
+│   └── unadjusted_vs_random.ipynb
 └── tests/
-│   ├── test_inference.py
-│   ├── test_selection.py
-│   ├── test_selection_regions.py
-│   └── test_simulation.py
+    └── test_*.py
 ```
 
 ## File Descriptions
@@ -108,7 +111,6 @@ shap-selective-inference/
 ### Notebooks: `notebooks/`
 
 - `notebooks/unadjusted_vs_random.ipynb`: A self-contained experiment comparing the false positive rates of Random selection and Unadjusted SHAP selection using both an unknown-variance F test and a known-variance chi test.
-- `notebooks/si_vs_unadjusted_vs_random.ipynb`: Uses the package's `run_simulation` function to compare Random, Unadjusted SHAP, and Selective SHAP (AIS), including summary tables, AIS diagnostics, and $p$-value histograms.
 
 ### Tests: `tests/`
 
@@ -165,7 +167,10 @@ result = run_simulation(
 
 ## Usage
 
-To compare the three methods, open `notebooks/si_vs_unadjusted_vs_random.ipynb` and run its cells from top to bottom. AIS refits the Random Forest and recomputes SHAP values for every candidate response, so begin with a small `n_iters` value when checking that the workflow runs correctly.
+To compare all three methods, run `examples/run_selective_inference.py` as
+shown below. The retained notebook compares only Random and unadjusted SHAP
+inference. AIS refits the Random Forest and recomputes SHAP values for every
+candidate response, so begin with a small `n_iters` value.
 
 Run SHAP selective inference with AIS directly from the repository root:
 
@@ -180,10 +185,16 @@ python examples/run_selective_inference.py `
 
 The feature-level results are written to
 `outputs/selective_inference_ais/selective_inference.csv`. A row with
-`status=ok` contains the AIS selective p-value in `p_value`, together with the
-denominator and tail ESS and the Monte Carlo standard error. A non-`ok` status
+`status=ok` contains the raw AIS selective p-value estimate in `p_value`, together
+with denominator/tail ESS, the Monte Carlo standard error and interval, and the
+fixed-budget/early-stopping mode. A non-`ok` status
 has `p_value=NaN`; increase `--max-final-samples` or revise the ESS thresholds
 rather than interpreting it as a valid p-value.
+
+The global-null summary reports featurewise FPR, FWER, global-null FDR, failure
+rates, confidence intervals, and a p-value uniformity KS statistic. The KS value
+is diagnostic only because selected-feature p-values can be dependent within an
+iteration.
 
 ### Compare exact-set and feature-inclusion power
 

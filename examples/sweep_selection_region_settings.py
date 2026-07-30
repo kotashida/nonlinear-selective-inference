@@ -110,6 +110,12 @@ def parse_args(argv=None):
         help="selection-region scan size (default: 1001)",
     )
     parser.add_argument(
+        "--grid-refinements",
+        type=int,
+        default=1,
+        help="number of deterministic midpoint-refinement passes (default: 1)",
+    )
+    parser.add_argument(
         "--n-jobs",
         type=int,
         default=-1,
@@ -156,6 +162,7 @@ def run_experiment(args, k_select, rf_name, selection_event):
         k_select=k_select,
         selection_decimals=10,
         grid_size=args.grid_size,
+        grid_refinements=args.grid_refinements,
         boundary_tol=1e-8,
         tail_probability=1e-8,
         rf_params=rf_params,
