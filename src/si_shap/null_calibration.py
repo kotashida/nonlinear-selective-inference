@@ -96,8 +96,19 @@ def _calibration_summary(
     n_iters: int,
     alpha_levels: Sequence[float],
 ) -> dict[str, float | int | str]:
+    if len(event_results) != n_iters:
+        raise ValueError(
+            "event_results must contain exactly one row per requested iteration."
+        )
+    if event_results.empty or event_results["selection_event"].nunique() != 1:
+        raise ValueError("event_results must contain exactly one selection event.")
     event = str(event_results["selection_event"].iloc[0])
     p_values = event_results["p_value"].to_numpy(dtype=float)
+    finite_values = p_values[np.isfinite(p_values)]
+    if np.any(np.isinf(p_values)) or np.any(
+        (finite_values < 0.0) | (finite_values > 1.0)
+    ):
+        raise ValueError("p-values must lie in [0, 1] or be NaN.")
     finite = np.isfinite(p_values)
     converged = p_values[finite]
     failures = int(np.sum(~finite))
@@ -258,6 +269,7 @@ def compare_selection_event_null_calibration(
     alpha_levels: Sequence[float] = (0.01, 0.05, 0.10),
     seed: int = 123,
     design_seed: int | None = None,
+    fixed_auxiliary_u: float | None = None,
     selection_decimals: int = 10,
     pilot_iters: int = 3,
     pilot_samples: int = 40,
@@ -271,7 +283,13 @@ def compare_selection_event_null_calibration(
     inference_method: str = "conditional_mc",
     stop_when_ess_met: bool = False,
 ):
-    """Evaluate paired single-target selective p-values under the global null."""
+    """Evaluate paired single-target selective p-values under the global null.
+
+    By default, a fresh auxiliary target-selection draw is generated in every
+    iteration.  ``fixed_auxiliary_u`` instead reuses one value across all null
+    responses, which evaluates calibration conditional on that realized target
+    randomization and matches the fixed-seed ``same_target`` workflow.
+    """
     events, levels = _validate_null_inputs(
         n_iters,
         n_samples,
@@ -297,6 +315,14 @@ def compare_selection_event_null_calibration(
         or not isinstance(design_seed, (int, np.integer))
     ):
         raise TypeError("design_seed must be an integer or None.")
+    if fixed_auxiliary_u is not None:
+        if (
+            not np.isscalar(fixed_auxiliary_u)
+            or not np.isfinite(fixed_auxiliary_u)
+            or not 0.0 <= float(fixed_auxiliary_u) < 1.0
+        ):
+            raise ValueError("fixed_auxiliary_u must be a finite scalar in [0, 1).")
+        fixed_auxiliary_u = float(fixed_auxiliary_u)
     if pilot_iters < 0 or pilot_samples < 1:
         raise ValueError("pilot_iters must be nonnegative and pilot_samples positive.")
     if final_batch_size < 1 or max_final_samples < 1:
@@ -312,6 +338,14 @@ def compare_selection_event_null_calibration(
         raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
     if inference_method == "conditional_mc" and stop_when_ess_met:
         raise ValueError("stop_when_ess_met requires inference_method='ais'.")
+    if inference_method == "ais" and (
+        min_denominator_ess > max_final_samples
+        or min_tail_ess > max_final_samples
+    ):
+        raise ValueError(
+            "AIS ESS targets cannot exceed max_final_samples; such targets are "
+            "mathematically unattainable."
+        )
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
     if k_select == 1:
@@ -369,7 +403,11 @@ def compare_selection_event_null_calibration(
         observed_selected = tuple(
             int(feature) for feature in observed.selected_features
         )
-        auxiliary_u = float(np.random.default_rng(shared_target_seed).random())
+        auxiliary_u = (
+            float(np.random.default_rng(shared_target_seed).random())
+            if fixed_auxiliary_u is None
+            else fixed_auxiliary_u
+        )
         target_feature = target_from_selected_set(observed_selected, auxiliary_u)
 
         for event in events:
@@ -460,6 +498,12 @@ def compare_selection_event_null_calibration(
             "variance_method": "known_simulation_sigma",
             "selection_events": events,
             "target_rule": "uniform_from_selected",
+            "auxiliary_randomization_mode": (
+                "redrawn_each_iteration"
+                if fixed_auxiliary_u is None
+                else "fixed_across_iterations"
+            ),
+            "fixed_auxiliary_u": fixed_auxiliary_u,
             "multiplicity": "none",
             "inference_method": inference_method,
             "alpha_levels": levels,

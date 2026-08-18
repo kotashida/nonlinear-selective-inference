@@ -164,8 +164,31 @@ def selection_probability(
     intervals: Iterable[tuple[float, float]], rank: int
 ) -> float:
     """Integrate a chi distribution over a collection of intervals."""
-    if rank < 1:
-        raise ValueError("rank must be positive.")
+    if (
+        isinstance(rank, (bool, np.bool_))
+        or not isinstance(rank, (int, np.integer))
+        or rank < 1
+    ):
+        raise ValueError("rank must be a positive integer.")
+    intervals = tuple(intervals)
+    previous_right = 0.0
+    for index, interval in enumerate(intervals):
+        if len(interval) != 2:
+            raise ValueError("Every interval must contain a left and right endpoint.")
+        left, right = interval
+        if (
+            not np.isfinite(left)
+            or (not np.isfinite(right) and right != np.inf)
+            or left < 0.0
+            or right < left
+        ):
+            raise ValueError(
+                "Interval endpoints must be nonnegative and ordered; only the "
+                "right endpoint may be positive infinity."
+            )
+        if index and left < previous_right:
+            raise ValueError("Selection intervals must be sorted and non-overlapping.")
+        previous_right = right
     probability = sum(
         stats.chi.cdf(right, df=rank) - stats.chi.cdf(left, df=rank)
         for left, right in intervals
@@ -369,7 +392,12 @@ def compute_selection_regions(
                     f"selection event for data set {dataset_number}, feature {feature}."
                 )
 
-            chi_quantile = float(stats.chi.ppf(1.0 - tail_probability, df=rank))
+            chi_quantile = float(stats.chi.isf(tail_probability, df=rank))
+            if not np.isfinite(chi_quantile):
+                raise FloatingPointError(
+                    "Could not compute a finite chi upper-tail cutoff; increase "
+                    "tail_probability."
+                )
             z_max = max(chi_quantile, 1.05 * float(t_obs))
             intervals = find_selection_intervals(
                 is_selected,
