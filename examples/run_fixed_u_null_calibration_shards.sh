@@ -23,6 +23,7 @@ K_SELECT="${K_SELECT:-2}"
 MC_PROPOSALS="${MC_PROPOSALS:-800}"
 RF_TREES="${RF_TREES:-50}"
 RF_DEPTH="${RF_DEPTH:-5}"
+RF_JOBS="${RF_JOBS:-1}"
 
 if ! [[ "$N_SHARDS" =~ ^[1-9][0-9]*$ ]]; then
   echo "N_SHARDS must be a positive integer" >&2
@@ -32,6 +33,10 @@ if ! [[ "$PARALLEL_SHARDS" =~ ^[1-9][0-9]*$ ]]; then
   echo "PARALLEL_SHARDS must be a positive integer" >&2
   exit 2
 fi
+if ! [[ "$RF_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "RF_JOBS must be a positive integer" >&2
+  exit 2
+fi
 
 mkdir -p "$OUTPUT_ROOT/logs"
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
@@ -39,7 +44,9 @@ export MPLBACKEND=Agg
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
+export VECLIB_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
+export POLARS_MAX_THREADS=1
 
 run_shard() {
   local shard_index="$1"
@@ -63,7 +70,7 @@ run_shard() {
     --rf-param "n_estimators=${RF_TREES}" \
     --rf-param "max_depth=${RF_DEPTH}" \
     --rf-param random_state=42 \
-    --rf-param n_jobs=1 \
+    --rf-param "n_jobs=${RF_JOBS}" \
     --output-dir "$shard_dir" \
     >"$log_path" 2>&1
   echo "Finished shard ${shard_index}; log: ${log_path}"
@@ -71,7 +78,7 @@ run_shard() {
 
 export -f run_shard
 export PYTHON_BIN OUTPUT_ROOT ITERS_PER_SHARD BASE_SEED DESIGN_SEED FIXED_U
-export N_SAMPLES N_FEATURES K_SELECT MC_PROPOSALS RF_TREES RF_DEPTH
+export N_SAMPLES N_FEATURES K_SELECT MC_PROPOSALS RF_TREES RF_DEPTH RF_JOBS
 
 seq 0 $((N_SHARDS - 1)) | xargs -n 1 -P "$PARALLEL_SHARDS" bash -c 'run_shard "$1"' _
 
