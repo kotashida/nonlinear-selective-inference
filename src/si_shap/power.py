@@ -362,6 +362,14 @@ def compare_selection_event_power(
         raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
     if inference_method == "conditional_mc" and stop_when_ess_met:
         raise ValueError("stop_when_ess_met requires inference_method='ais'.")
+    if inference_method == "ais" and (
+        min_denominator_ess > max_final_samples
+        or min_tail_ess > max_final_samples
+    ):
+        raise ValueError(
+            "AIS ESS targets cannot exceed max_final_samples; such targets are "
+            "mathematically unattainable."
+        )
 
     resolved_rf_params = (
         _resolve_rf_params(rf_params)

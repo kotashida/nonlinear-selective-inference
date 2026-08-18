@@ -262,12 +262,32 @@ def run_simulation(
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
     _validate_selection_event(selection_event)
+    if selection_event == "same_target":
+        raise ValueError(
+            "run_simulation does not define a randomized single-target rule for "
+            "same_target; use compare_selection_event_null_calibration or call "
+            "selective_inference with target_rule='uniform_from_selected'."
+        )
     if multiplicity not in {"none", "bonferroni", "holm"}:
         raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
+    if selection_event == "feature_inclusion" and multiplicity == "holm":
+        raise ValueError(
+            "Holm adjustment is not implemented for feature_inclusion because "
+            "the featurewise p-values condition on different inclusion events. "
+            "Use multiplicity='bonferroni' or a common exact_set/exact_ranking event."
+        )
     if inference_method not in {"conditional_mc", "ais"}:
         raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
     if inference_method == "conditional_mc" and stop_when_ess_met:
         raise ValueError("stop_when_ess_met requires inference_method='ais'.")
+    if inference_method == "ais" and (
+        min_denominator_ess > max_final_samples
+        or min_tail_ess > max_final_samples
+    ):
+        raise ValueError(
+            "AIS ESS targets cannot exceed max_final_samples; such targets are "
+            "mathematically unattainable."
+        )
     resolved_rf_params = _resolve_rf_params(rf_params) if estimator is None and selector is None else None
     resolved_selector = make_selector(
         estimator=estimator,
@@ -282,10 +302,18 @@ def run_simulation(
     ais_diagnostics = []
 
     if selection_event == "exact_set":
-        warnings.warn(
+        message = (
             "Exact-set conditioning can be rare. Conditional Monte Carlo remains "
             "valid but may be conservative when few proposal radii reproduce the "
-            "event; inspect selected_samples and selection_probability_estimate.",
+            "event; inspect selected_samples and selection_probability_estimate."
+            if inference_method == "conditional_mc"
+            else
+            "Exact-set conditioning can be rare. Exploratory AIS estimates can "
+            "fail when too little selected or tail weight is sampled; inspect "
+            "status, denominator_ess, and tail_ess."
+        )
+        warnings.warn(
+            message,
             UserWarning,
             stacklevel=2,
         )

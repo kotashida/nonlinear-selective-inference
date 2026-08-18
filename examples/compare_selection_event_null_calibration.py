@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import os
+import platform
+import subprocess
+import sys
 from pathlib import Path
 
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -22,6 +26,59 @@ from si_shap import compare_selection_event_null_calibration
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "selection_event_null_calibration"
+PACKAGE_DISTRIBUTIONS = (
+    "si-shap",
+    "numpy",
+    "pandas",
+    "scipy",
+    "patsy",
+    "scikit-learn",
+    "shap",
+    "matplotlib",
+    "tqdm",
+)
+
+
+def _runtime_metadata():
+    """Return dependency and source metadata used to validate pooled shards."""
+    package_versions = {}
+    for distribution in PACKAGE_DISTRIBUTIONS:
+        try:
+            package_versions[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            package_versions[distribution] = None
+
+    git_commit = None
+    git_dirty = None
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if commit.returncode == 0:
+            git_commit = commit.stdout.strip()
+        if status.returncode == 0:
+            git_dirty = bool(status.stdout.strip())
+    except OSError:
+        pass
+
+    return {
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "package_versions": package_versions,
+        "git_commit": git_commit,
+        "git_dirty": git_dirty,
+    }
 
 
 def _parse_rf_parameter(argument):
@@ -53,6 +110,14 @@ def parse_args(argv=None):
     parser.add_argument("--sigma", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--design-seed", type=int)
+    parser.add_argument(
+        "--fixed-auxiliary-u",
+        type=float,
+        help=(
+            "reuse one target-selection draw in [0,1) across all iterations; "
+            "omit to redraw it independently in each iteration"
+        ),
+    )
     parser.add_argument(
         "--selection-events",
         nargs="+",
@@ -214,6 +279,7 @@ def main(argv=None):
         alpha_levels=args.alpha_levels,
         seed=args.seed,
         design_seed=args.design_seed,
+        fixed_auxiliary_u=args.fixed_auxiliary_u,
         selection_decimals=args.selection_decimals,
         pilot_iters=args.pilot_iters,
         pilot_samples=args.pilot_samples,
@@ -225,6 +291,7 @@ def main(argv=None):
         inference_method=args.inference_method,
         stop_when_ess_met=args.stop_when_ess_met,
     )
+    result["settings"]["runtime_metadata"] = _runtime_metadata()
     _write_results(result, args.output_dir)
     print(result["calibration_summary"].to_string(index=False))
     print(f"\nSaved results to {args.output_dir.resolve()}")

@@ -37,18 +37,21 @@ PRESETS = {
     "quick": {
         "n_iters": 10,
         "signal_strength": 0.3,
+        "pilot_iters": 3,
         "pilot_samples": 40,
         "max_final_samples": 800,
     },
     "calibrated": {
         "n_iters": 100,
         "signal_strength": 0.3,
+        "pilot_iters": 3,
         "pilot_samples": 40,
         "max_final_samples": 1600,
     },
     "calibrated_plus": {
         "n_iters": 100,
         "signal_strength": 0.3,
+        "pilot_iters": 3,
         "pilot_samples": 200,
         "max_final_samples": 6400,
     },
@@ -69,6 +72,7 @@ PRESETS = {
     "stress": {
         "n_iters": 100,
         "signal_strength": 1.0,
+        "pilot_iters": 3,
         "pilot_samples": 40,
         "max_final_samples": 6400,
     },
@@ -160,7 +164,7 @@ def parse_args(argv=None):
         choices=("conditional_mc", "ais"),
         default="conditional_mc",
     )
-    parser.add_argument("--pilot-iters", type=int, default=3)
+    parser.add_argument("--pilot-iters", type=int)
     parser.add_argument(
         "--pilot-samples",
         type=int,

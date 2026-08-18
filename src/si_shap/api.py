@@ -104,32 +104,35 @@ def adjust_p_values(p_values, method="none"):
     if method not in {"none", "bonferroni", "holm"}:
         raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
     values = np.asarray(p_values, dtype=float)
-    adjusted = np.full(values.shape, np.nan, dtype=float)
-    finite_indices = np.flatnonzero(np.isfinite(values))
+    if np.any(np.isinf(values)):
+        raise ValueError("p-values must lie in [0, 1] or be NaN, not infinite.")
+    flat_values = values.ravel()
+    flat_adjusted = np.full(flat_values.shape, np.nan, dtype=float)
+    finite_indices = np.flatnonzero(np.isfinite(flat_values))
     if finite_indices.size == 0:
-        return adjusted
-    finite = values[finite_indices]
+        return flat_adjusted.reshape(values.shape)
+    finite = flat_values[finite_indices]
     if np.any((finite < 0.0) | (finite > 1.0)):
         raise ValueError("p-values must lie in [0, 1] or be NaN.")
     if method == "none":
-        adjusted[finite_indices] = finite
+        flat_adjusted[finite_indices] = finite
     elif method == "bonferroni":
         # The family size includes failed hypotheses; omitting them would make
         # the correction anticonservative.
-        adjusted[finite_indices] = np.minimum(1.0, finite * values.size)
+        flat_adjusted[finite_indices] = np.minimum(1.0, finite * flat_values.size)
     else:
         # Holm depends on the ordering of every raw p-value. A failed estimate
         # has unknown order, so no familywise Holm result is reported.
-        if finite_indices.size != values.size:
-            return adjusted
+        if finite_indices.size != flat_values.size:
+            return flat_adjusted.reshape(values.shape)
         order = np.argsort(finite, kind="stable")
         ordered = finite[order]
         scaled = (finite.size - np.arange(finite.size)) * ordered
         ordered_adjusted = np.minimum(1.0, np.maximum.accumulate(scaled))
         restored = np.empty_like(ordered_adjusted)
         restored[order] = ordered_adjusted
-        adjusted[finite_indices] = restored
-    return adjusted
+        flat_adjusted[finite_indices] = restored
+    return flat_adjusted.reshape(values.shape)
 
 
 def selective_inference(
@@ -231,6 +234,14 @@ def selective_inference(
             "stop_when_ess_met is available only for exploratory AIS; "
             "conditional_mc always uses its fixed proposal budget."
         )
+    if inference_method == "ais" and (
+        min_denominator_ess > max_final_samples
+        or min_tail_ess > max_final_samples
+    ):
+        raise ValueError(
+            "AIS ESS targets cannot exceed max_final_samples; such targets are "
+            "mathematically unattainable."
+        )
     if not isinstance(verify_selector_determinism, (bool, np.bool_)):
         raise TypeError("verify_selector_determinism must be boolean.")
 
@@ -276,11 +287,12 @@ def selective_inference(
             or not isinstance(target_feature, (int, np.integer))
         ):
             raise TypeError("target_feature must be an integer or None.")
-        realized_u = (
-            float(np.random.default_rng(int(target_seed)).random())
-            if auxiliary_u is None
-            else float(auxiliary_u)
-        )
+        if auxiliary_u is None:
+            realized_u = float(np.random.default_rng(int(target_seed)).random())
+        else:
+            if not np.isscalar(auxiliary_u) or not np.isfinite(auxiliary_u):
+                raise ValueError("auxiliary_u must be a finite scalar in [0, 1).")
+            realized_u = float(auxiliary_u)
         computed_target = target_from_selected_set(observed_selected, realized_u)
         if target_feature is not None and int(target_feature) != computed_target:
             raise ValueError(

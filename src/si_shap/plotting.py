@@ -269,7 +269,7 @@ def _plot_selection_region_on_axis(
         f"{result.selection_position}/{result.k_select} | "
         f"{result.selection_event.replace('_', '-')}\n"
         f"df={result.rank}, diagnostic detected probability="
-        f"{result.selection_probability:.4f}, upper bound="
+        f"{result.selection_probability:.4f}, detected + omitted tail="
         f"{probability_upper_bound:.4f}"
     )
     axis.set_ylabel("Density")
