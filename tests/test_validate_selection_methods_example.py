@@ -1,7 +1,18 @@
+import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["POLARS_MAX_THREADS"] = "1"
+
+import json
 import numpy as np
 import pandas as pd
 
 from examples import validate_selection_methods as validation
+from examples import summarize_selection_method_validation_shards as shard_summary
 
 
 def test_calibration_decision_detects_obvious_anti_conservatism():
@@ -70,3 +81,93 @@ def test_comprehensive_preset_covers_multiple_designs_and_signal_strengths():
     assert len(preset["designs"]) >= 3
     assert len(preset["signal_strengths"]) >= 5
     assert preset["fixed_auxiliary_values"] == (None, 0.25, 0.75)
+
+
+def test_validation_shards_are_pooled_before_decisions(tmp_path):
+    root = tmp_path / "validation_shards"
+    common = {
+        "preset": "smoke",
+        "methods": ["marginal_screening"],
+        "designs": ["baseline"],
+        "n_null_iters": 2,
+        "n_power_iters": 2,
+        "max_final_samples": 40,
+        "fixed_auxiliary_values": [None],
+        "signal_strengths": [0.3],
+        "signal_positions": ["first"],
+        "minimum_conditional_power": 0.8,
+        "minimum_calibration_iterations": 4,
+        "minimum_signal_targets": 3,
+        "primary_selection_event": "same_target",
+        "comparison_events": ["feature_inclusion", "same_target"],
+        "alpha_levels": [0.01, 0.05, 0.1],
+        "design_seed": 99,
+        "rf_jobs": 1,
+        "runtime_metadata": {
+            "python_version": "test",
+            "package_versions": {},
+            "git_commit": "abc",
+        },
+    }
+    for index, p_values in enumerate(((0.2, 0.4), (0.6, 0.8))):
+        shard = root / f"shard_{index}"
+        null_dir = shard / "marginal_screening" / "baseline" / "null_fresh"
+        power_dir = (
+            shard
+            / "marginal_screening"
+            / "baseline"
+            / "power_feature_0_beta_0p3"
+        )
+        null_dir.mkdir(parents=True)
+        power_dir.mkdir(parents=True)
+        settings = {**common, "seed": 100 + index}
+        (shard / "validation_settings.json").write_text(
+            json.dumps(settings), encoding="utf-8"
+        )
+        pd.DataFrame(
+            {"selection_event": ["same_target"] * 2, "p_value": p_values}
+        ).to_csv(null_dir / "p_value_results.csv", index=False)
+        np.save(null_dir / "fixed_design.npy", np.arange(6).reshape(3, 2))
+        pd.DataFrame(
+            {
+                "selection_event": ["same_target"] * 2,
+                "target_is_signal": [True, True],
+                "p_value": [0.01, 0.02],
+                "rejected": [True, True],
+                "successful_detection": [True, True],
+            }
+        ).to_csv(power_dir / "target_results.csv", index=False)
+
+    result = shard_summary.summarize_shards(
+        root, root / "pooled_summary", expected_shards=2
+    )
+
+    assert set(result["calibration"]["n_iterations"]) == {4}
+    assert set(result["power"]["n_iterations"]) == {4}
+    assert result["settings"]["n_null_iters"] == 4
+    assert result["settings"]["n_power_iters"] == 4
+    assert result["settings"]["shard_root_seeds"] == [100, 101]
+
+
+def test_validation_cli_accepts_shared_design_and_rf_worker_limits():
+    args = validation.parse_args(
+        [
+            "--design-seed",
+            "99",
+            "--rf-jobs",
+            "3",
+            "--auxiliary-values",
+            "fresh",
+            "0.75",
+            "--signal-strengths",
+            "0.5",
+            "--signal-positions",
+            "first",
+        ]
+    )
+
+    assert args.design_seed == 99
+    assert args.rf_jobs == 3
+    assert args.auxiliary_values == [None, 0.75]
+    assert args.signal_strengths == [0.5]
+    assert args.signal_positions == ["first"]

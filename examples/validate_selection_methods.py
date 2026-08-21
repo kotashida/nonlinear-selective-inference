@@ -111,6 +111,17 @@ DEFAULT_MIN_CALIBRATION_ITERATIONS = 1000
 DEFAULT_MIN_SIGNAL_TARGETS = 100
 
 
+def _auxiliary_argument(value: str) -> float | None:
+    if value.lower() in {"fresh", "random", "none"}:
+        return None
+    parsed = float(value)
+    if not 0.0 <= parsed < 1.0:
+        raise argparse.ArgumentTypeError(
+            "auxiliary values must be 'fresh' or numbers in [0, 1)"
+        )
+    return parsed
+
+
 def _clopper_pearson(successes: int, trials: int) -> tuple[float, float]:
     if trials < 1:
         return np.nan, np.nan
@@ -159,6 +170,8 @@ def _load_or_run_null(
     fixed_auxiliary_u: float | None,
     max_final_samples: int,
     seed: int,
+    design_seed: int | None = None,
+    rf_jobs: int = 32,
 ):
     result_path = output_dir / "p_value_results.csv"
     if result_path.is_file() and not overwrite:
@@ -171,6 +184,8 @@ def _load_or_run_null(
         alpha_levels=ALPHA_LEVELS,
         fixed_auxiliary_u=fixed_auxiliary_u,
         seed=seed,
+        design_seed=design_seed,
+        rf_params={"n_jobs": rf_jobs} if method == "shap" else None,
         inference_method="conditional_mc",
         final_batch_size=min(80, max_final_samples),
         max_final_samples=max_final_samples,
@@ -191,6 +206,7 @@ def _load_or_run_power(
     signal_strength: float,
     max_final_samples: int,
     seed: int,
+    rf_jobs: int = 32,
 ):
     result_path = output_dir / "target_results.csv"
     if result_path.is_file() and not overwrite:
@@ -202,6 +218,7 @@ def _load_or_run_power(
         signal_features=(signal_feature,),
         signal_strength=signal_strength,
         selection_method=method,
+        rf_params={"n_jobs": rf_jobs} if method == "shap" else None,
         selection_events=COMPARISON_EVENTS,
         seed=seed,
         inference_method="conditional_mc",
@@ -347,6 +364,16 @@ def parse_args(argv=None):
     parser.add_argument("--n-null-iters", type=int)
     parser.add_argument("--n-power-iters", type=int)
     parser.add_argument("--max-final-samples", type=int)
+    parser.add_argument(
+        "--auxiliary-values",
+        nargs="+",
+        type=_auxiliary_argument,
+        help="Override null regimes, using 'fresh' and/or fixed values in [0, 1).",
+    )
+    parser.add_argument("--signal-strengths", nargs="+", type=float)
+    parser.add_argument(
+        "--signal-positions", nargs="+", choices=("first", "middle")
+    )
     parser.add_argument("--minimum-conditional-power", type=float, default=0.80)
     parser.add_argument(
         "--minimum-calibration-iterations",
@@ -357,6 +384,22 @@ def parse_args(argv=None):
         "--minimum-signal-targets", type=int, default=DEFAULT_MIN_SIGNAL_TARGETS
     )
     parser.add_argument("--seed", type=int, default=20260821)
+    parser.add_argument(
+        "--design-seed",
+        type=int,
+        help=(
+            "Optional root seed for fixed null designs. Supplying the same value "
+            "to every shard guarantees identical designs across shards."
+        ),
+    )
+    parser.add_argument(
+        "--rf-jobs",
+        type=int,
+        choices=range(1, 33),
+        default=32,
+        metavar="1..32",
+        help="Random-forest workers per SHAP process (default: 32).",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     return parser.parse_args(argv)
@@ -369,6 +412,21 @@ def main(argv=None):
     n_null_iters = args.n_null_iters or preset["n_null_iters"]
     n_power_iters = args.n_power_iters or preset["n_power_iters"]
     max_final_samples = args.max_final_samples or preset["max_final_samples"]
+    fixed_auxiliary_values = tuple(
+        preset["fixed_auxiliary_values"]
+        if args.auxiliary_values is None
+        else args.auxiliary_values
+    )
+    signal_strengths = tuple(
+        preset["signal_strengths"]
+        if args.signal_strengths is None
+        else args.signal_strengths
+    )
+    signal_positions = tuple(
+        preset["signal_positions"]
+        if args.signal_positions is None
+        else args.signal_positions
+    )
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -377,8 +435,13 @@ def main(argv=None):
     for method_index, method in enumerate(args.methods):
         for design_index, design_name in enumerate(designs):
             design = DESIGNS[design_name]
+            shared_design_seed = (
+                None
+                if args.design_seed is None
+                else _seed(args.design_seed, tuple(DESIGNS).index(design_name))
+            )
             for auxiliary_index, fixed_u in enumerate(
-                preset["fixed_auxiliary_values"]
+                fixed_auxiliary_values
             ):
                 regime = _auxiliary_label(fixed_u)
                 run_dir = output_dir / method / design_name / f"null_{regime}"
@@ -391,6 +454,8 @@ def main(argv=None):
                     fixed_auxiliary_u=fixed_u,
                     max_final_samples=max_final_samples,
                     seed=_seed(args.seed, method_index, design_index, auxiliary_index),
+                    design_seed=shared_design_seed,
+                    rf_jobs=args.rf_jobs,
                 )
                 calibration_rows.extend(
                     _calibration_rows(
@@ -401,10 +466,10 @@ def main(argv=None):
                     )
                 )
 
-            for position_index, position in enumerate(preset["signal_positions"]):
+            for position_index, position in enumerate(signal_positions):
                 feature = _signal_feature(position, design["n_features"])
                 for strength_index, strength in enumerate(
-                    preset["signal_strengths"]
+                    signal_strengths
                 ):
                     strength_label = str(strength).replace(".", "p")
                     run_dir = (
@@ -430,6 +495,7 @@ def main(argv=None):
                             position_index,
                             strength_index,
                         ),
+                        rf_jobs=args.rf_jobs,
                     )
                     power_rows.append(
                         _power_row(
@@ -457,6 +523,9 @@ def main(argv=None):
         "n_null_iters": n_null_iters,
         "n_power_iters": n_power_iters,
         "max_final_samples": max_final_samples,
+        "fixed_auxiliary_values": fixed_auxiliary_values,
+        "signal_strengths": signal_strengths,
+        "signal_positions": signal_positions,
         "minimum_conditional_power": args.minimum_conditional_power,
         "minimum_calibration_iterations": args.minimum_calibration_iterations,
         "minimum_signal_targets": args.minimum_signal_targets,
@@ -464,6 +533,8 @@ def main(argv=None):
         "comparison_events": COMPARISON_EVENTS,
         "alpha_levels": ALPHA_LEVELS,
         "seed": args.seed,
+        "design_seed": args.design_seed,
+        "rf_jobs": args.rf_jobs,
         "runtime_metadata": _runtime_metadata(),
     }
     with (output_dir / "validation_settings.json").open(
