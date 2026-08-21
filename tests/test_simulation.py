@@ -14,6 +14,7 @@ import pytest
 from si_shap import simulation
 from si_shap.selection import SelectionResult
 from si_shap.simulation import (
+    _generate_gaussian_design,
     _generate_null_dataset,
     _method_summary,
     _validate_inputs,
@@ -60,6 +61,20 @@ def test_generate_null_dataset_is_reproducible():
 
     np.testing.assert_array_equal(first[0], second[0])
     np.testing.assert_array_equal(first[1], second[1])
+
+
+def test_gaussian_design_supports_ar1_feature_correlation():
+    X = _generate_gaussian_design(np.random.default_rng(123), 5000, 4, 0.6)
+
+    correlations = np.corrcoef(X, rowvar=False)
+    assert correlations[0, 1] == pytest.approx(0.6, abs=0.04)
+    assert correlations[0, 2] == pytest.approx(0.6**2, abs=0.04)
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.0, np.nan])
+def test_gaussian_design_rejects_invalid_feature_correlation(value):
+    with pytest.raises(ValueError, match="feature_correlation"):
+        _generate_gaussian_design(np.random.default_rng(123), 20, 4, value)
 
 
 def test_method_summary_reports_global_null_family_metrics():

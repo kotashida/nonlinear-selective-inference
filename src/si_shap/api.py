@@ -1,4 +1,4 @@
-"""Public real-data API for featurewise SHAP selective inference."""
+"""Public real-data API for featurewise selective inference."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from .inference import (
 )
 from .selection import (
     SelectionResult,
-    ShapSelector,
+    _BUILTIN_SELECTOR_TYPES,
     _validate_selection_event,
     _validate_target_rule,
     make_selector,
@@ -141,10 +141,11 @@ def selective_inference(
     *,
     k_select: int,
     sigma,
+    selection_method: str | None = None,
     estimator=None,
     selector=None,
-    selection_event: str = "exact_set",
-    target_rule: str = "all_selected",
+    selection_event: str | None = None,
+    target_rule: str | None = None,
     target_seed: int = 123,
     auxiliary_u: float | None = None,
     target_feature: int | None = None,
@@ -161,13 +162,15 @@ def selective_inference(
     stop_when_ess_met: bool = False,
     verify_selector_determinism: bool = True,
 ):
-    """Run individual selective tests for SHAP-selected features in user data.
+    """Run selective tests after an interchangeable feature-selection method.
 
-    The default event is equality of the unordered observed top-k set. Each
-    selected feature still has its own response path and therefore its own test.
-    Set ``target_rule='uniform_from_selected'`` to test one feature chosen by a
-    fixed auxiliary draw; ``same_target`` then conditions on reproduction of
-    the complete selector-to-target algorithm's output.
+    By default, one feature is chosen uniformly from the observed selected set
+    using fixed auxiliary randomness, and ``same_target`` conditions on
+    reproduction of that complete selector-to-target algorithm's output.
+    Explicitly setting another selection event retains the legacy
+    ``all_selected`` target rule unless ``target_rule`` is also supplied.
+    ``selection_method`` selects one of ``shap``, ``mutual_information``, or
+    ``marginal_screening``; a custom ``selector`` may be supplied instead.
     ``sigma`` must be externally supplied and known under the stated model.
     The default ``conditional_mc`` method returns a finite-sample-valid,
     conservative conditional Monte Carlo rank p-value. ``inference_method='ais'``
@@ -177,6 +180,16 @@ def selective_inference(
     ``verify_selector_determinism=False`` is requested.
     """
     X, y, k_select, sigma = _validate_data(X, y, k_select, sigma)
+    if selection_event is None:
+        selection_event = "same_target" if target_rule is None else (
+            "same_target" if target_rule == "uniform_from_selected" else "exact_set"
+        )
+    if target_rule is None:
+        target_rule = (
+            "uniform_from_selected"
+            if selection_event == "same_target"
+            else "all_selected"
+        )
     _validate_selection_event(selection_event)
     _validate_target_rule(target_rule)
     if selection_event == "same_target" and target_rule != "uniform_from_selected":
@@ -246,12 +259,13 @@ def selective_inference(
         raise TypeError("verify_selector_determinism must be boolean.")
 
     resolved_selector = make_selector(
+        selection_method=selection_method,
         estimator=estimator,
         selector=selector,
         selection_decimals=selection_decimals,
     )
     check_repeated_calls = verify_selector_determinism and not isinstance(
-        resolved_selector, ShapSelector
+        resolved_selector, _BUILTIN_SELECTOR_TYPES
     )
 
     def select_response(response):
@@ -313,11 +327,14 @@ def selective_inference(
     importance_table = pd.DataFrame(
         {
             "feature": np.arange(X.shape[1]),
-            "shap_importance": observed.importance,
-            "shap_rank": rank_by_feature,
+            "importance_score": observed.importance,
+            "selection_rank": rank_by_feature,
             "selected": np.isin(np.arange(X.shape[1]), observed.selected_features),
         }
-    ).sort_values("shap_rank", ignore_index=True)
+    ).sort_values("selection_rank", ignore_index=True)
+    # Compatibility aliases for callers written against the original SHAP-only API.
+    importance_table["shap_importance"] = importance_table["importance_score"]
+    importance_table["shap_rank"] = importance_table["selection_rank"]
     importance_table["selection_event"] = selection_event
 
     if selection_event == "exact_set":
@@ -401,6 +418,8 @@ def selective_inference(
             {
                 "feature": feature,
                 "selection_position": position,
+                "importance_score": float(observed.importance[feature]),
+                "selection_rank": int(rank_by_feature[feature]),
                 "shap_importance": float(observed.importance[feature]),
                 "shap_rank": int(rank_by_feature[feature]),
                 "test_rank": test_rank,
@@ -432,6 +451,9 @@ def selective_inference(
         "n_samples": X.shape[0],
         "n_features": X.shape[1],
         "k_select": k_select,
+        "selection_method": selector_settings.get(
+            "selection_method", selector_settings.get("selector")
+        ),
         "sigma": sigma,
         "variance_method": "known_user_supplied",
         "effect_confidence_intervals_implemented": False,
@@ -457,12 +479,15 @@ def selective_inference(
     }
     return {
         "observed_selected_features": np.asarray(observed_selected, dtype=int),
+        "importance_scores": observed.importance.copy(),
+        "selection_ranking": observed.ranking.copy(),
         "shap_importance": observed.importance.copy(),
         "shap_ranking": observed.ranking.copy(),
         "importance_table": importance_table,
         "feature_results": feature_results,
         "inference_diagnostics": feature_results.copy(),
         "ais_diagnostics": feature_results.copy(),
+        "selection_method": settings["selection_method"],
         "selection_event": selection_event,
         "target_rule": target_rule,
         "observed_target_feature": observed_target,

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "si-shap"
 version = "0.1.0"
-description = "Simulation tools for SHAP-based selective inference"
+description = "Selective inference after interchangeable feature-selection methods"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

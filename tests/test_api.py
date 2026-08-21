@@ -71,6 +71,7 @@ def test_public_api_returns_k_featurewise_results_and_reproduces_t_obs(monkeypat
             k_select=2,
             sigma=1.5,
             selector=FixedSelector(),
+            selection_event="exact_set",
         )
 
     assert checked == [True, True]
@@ -187,12 +188,56 @@ def test_uniform_target_mode_tests_one_reproducible_feature(monkeypatch):
     assert result["feature_results"]["feature"].tolist() == [1]
 
 
+def test_default_api_uses_same_target_and_generic_result_names(monkeypatch):
+    monkeypatch.setattr(
+        "si_shap.api._run_conditional_mc",
+        lambda t_obs, rank, is_selected, rng, **kwargs: (
+            0.25,
+            {"status": "ok", "denominator_ess": 10.0, "tail_ess": 5.0},
+        ),
+    )
+    X, y = _data()
+    result = selective_inference(
+        X, y, k_select=2, sigma=1.0, selector=FixedSelector()
+    )
+
+    assert result["selection_event"] == "same_target"
+    assert result["target_rule"] == "uniform_from_selected"
+    assert len(result["feature_results"]) == 1
+    assert {"importance_score", "selection_rank"}.issubset(
+        result["feature_results"].columns
+    )
+    np.testing.assert_array_equal(
+        result["importance_scores"], result["shap_importance"]
+    )
+
+
+@pytest.mark.parametrize(
+    "selection_method", ["mutual_information", "marginal_screening"]
+)
+def test_public_api_accepts_non_shap_builtin_methods(monkeypatch, selection_method):
+    monkeypatch.setattr(
+        "si_shap.api._run_conditional_mc",
+        lambda t_obs, rank, is_selected, rng, **kwargs: (
+            0.5,
+            {"status": "ok", "denominator_ess": 10.0, "tail_ess": 5.0},
+        ),
+    )
+    X, y = _data()
+    result = selective_inference(
+        X, y, k_select=2, sigma=1.0, selection_method=selection_method
+    )
+
+    assert result["settings"]["selection_method"] == selection_method
+    assert len(result["feature_results"]) == 1
+
+
 def test_same_target_requires_uniform_target_rule():
     X, y = _data()
     with pytest.raises(ValueError, match="same_target requires"):
         selective_inference(
             X, y, k_select=2, sigma=1.0, selector=FixedSelector(),
-            selection_event="same_target"
+            selection_event="same_target", target_rule="all_selected"
         )
 
 

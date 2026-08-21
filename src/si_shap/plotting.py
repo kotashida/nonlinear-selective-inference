@@ -24,12 +24,14 @@ def plot_results(results):
     """Plot p-value histograms, excluding failed SI estimates."""
     alpha = results["alpha"]
     summary = results["summary"].set_index("method")
-    colors = {
-        "Random": "gray",
-        "Unadjusted SHAP": "blue",
-        "Selective SHAP (conditional MC)": "green",
-        "Selective SHAP (approximate AIS)": "orange",
-    }
+    def method_color(method):
+        if method == "Random":
+            return "gray"
+        if method.startswith("Unadjusted "):
+            return "blue"
+        if method.endswith("(approximate AIS)"):
+            return "orange"
+        return "green"
 
     plt.figure(figsize=(12, 6))
     for method, p_values in results["p_values"].items():
@@ -42,7 +44,7 @@ def plot_results(results):
             bins=20,
             range=(0, 1),
             alpha=0.45,
-            color=colors.get(method, "green"),
+            color=method_color(method),
             edgecolor="black",
             label=f"{method} (FPR: {label_fpr})",
         )

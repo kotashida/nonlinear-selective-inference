@@ -1,12 +1,12 @@
-# SHAP Selective Inference Simulation
+# Selective Inference After Feature Selection
 
-This project simulates selective inference after features are selected using SHAP importance from a nonlinear model. It implements Random Forest Tree SHAP selection, chi tests for B-spline effects, finite-sample-valid conditional Monte Carlo rank $p$ values, explicitly exploratory Adaptive Importance Sampling (AIS), and selection-region visualization.
+This project performs selective inference after deterministic top-$k$ feature selection. It includes Random Forest Tree SHAP, mutual-information screening, and marginal-correlation screening; chi tests for B-spline effects; finite-sample-valid conditional Monte Carlo rank $p$ values; explicitly exploratory Adaptive Importance Sampling (AIS); and selection-region visualization.
 
 ## Real-data API and statistical scope
 
-Use `selective_inference` for externally supplied data. The conservative default
-conditions on equality of the **unordered observed top-$k$ set**; weaker target
-feature inclusion and ordered exact-ranking events are explicit alternatives.
+Use `selective_inference` for externally supplied data. The default conditions
+on reproducing the output of the complete selection-and-targeting algorithm;
+exact-set, feature-inclusion, and exact-ranking events remain explicit options.
 
 ```python
 from sklearn.ensemble import RandomForestRegressor
@@ -16,12 +16,11 @@ result = selective_inference(
     X,
     y,
     k_select=2,
+    selection_method="shap",  # or "mutual_information" / "marginal_screening"
     estimator=RandomForestRegressor(
         n_estimators=100, max_depth=5, random_state=42
     ),
     sigma=known_sigma,
-    selection_event="exact_set",
-    multiplicity="holm",
 )
 
 print(result["observed_selected_features"])
@@ -29,15 +28,32 @@ print(result["importance_table"])
 print(result["feature_results"])
 ```
 
+The default procedure chooses one target uniformly from the selected top-$k$
+set using one reproducible auxiliary draw, then uses `same_target` to condition
+on the output of the complete selection-and-targeting algorithm. To test every
+selected feature under the legacy, more restrictive event, set
+`selection_event="exact_set"`, `target_rule="all_selected"`, and an appropriate
+multiplicity correction.
+
 The tested null is a zero fixed-design projection onto the target feature's
 centered cubic B-spline basis: a **marginal nonlinear-association** hypothesis,
 not a Random Forest coefficient, a SHAP value, a conditional effect, or a causal
 effect. Validity requires fixed `X`, independent Gaussian errors with known,
 user-supplied `sigma`, and a deterministic selection pipeline. Unknown-variance
 inference is deliberately rejected rather than silently estimating variance from
-selected data. The currently supported built-in combination is a cloneable
-scikit-learn tree estimator with Tree SHAP; `RandomForestRegressor` is the
-officially tested estimator and every exposed `random_state` must be fixed.
+selected data. For Tree SHAP, `RandomForestRegressor` is the officially tested
+estimator and every exposed `random_state` must be fixed.
+Mutual-information screening fixes its estimator randomness; marginal screening
+uses absolute Pearson correlation with deterministic feature-index tie-breaking.
+The six experiments in `docs/EXPERIMENT_FINDINGS_REPORT.md` validate only the
+reported Random Forest/SHAP configurations. The two additional selectors are
+implemented but require their own null-calibration and power experiments before
+their statistical performance should be treated as validated.
+
+Custom selection methods can implement `Selector`: `select(X, response,
+k_select)` must refit the complete selection procedure and return a
+`SelectionResult`, while `get_settings()` records reproducibility metadata.
+The selector must return exactly `k_select` features and a complete ranking.
 
 `feature_results` contains individual selective p-values, optional Holm or
 Bonferroni adjusted values, the event definition, retained conditional-Monte-Carlo
@@ -49,14 +65,42 @@ reproduces selection. `inference_method="ais"` retains the self-normalized AIS
 ratio as an explicitly approximate exploratory estimate; it is not an exact
 finite-sample p-value, even when ESS diagnostics are satisfactory.
 
-By default, for `k_select=k` the API returns `k` rows. With
-`target_rule="uniform_from_selected"`, it instead draws one auxiliary
+By default, for `k_select=k` the API draws one auxiliary
 `u ~ Uniform(0,1)`, maps the canonically sorted selected set to one target, and
 returns one row. The same fixed `u` must be reused for every candidate response.
 The `same_target` event conditions only on reproducing that complete algorithm's
 target; `exact_set` also preserves the full selected set, `feature_inclusion`
 only preserves membership of the target, and `exact_ranking` preserves the
 complete feature ranking, including features below the top-$k$ boundary.
+Explicitly selecting an event other than `same_target` retains the legacy
+`target_rule="all_selected"` behavior unless a target rule is also supplied.
+
+## Cross-selector calibration and power validation
+
+Run a small end-to-end smoke check before submitting the comprehensive matrix:
+
+```powershell
+python examples/validate_selection_methods.py --preset smoke
+```
+
+The full validation covers all three selectors, fresh and fixed auxiliary
+randomization, four designs (including correlated features and different
+`(n, p, k)` settings), two signal locations, and five signal strengths, with
+1,000 null and 1,000 power iterations per configuration:
+
+```powershell
+python examples/validate_selection_methods.py --preset comprehensive
+```
+
+The run is resumable and can be distributed by selector or design with
+`--methods`, `--designs`, and a distinct `--output-dir` for each worker.
+`calibration_decisions.csv` applies familywise
+one-sided binomial and simultaneous ECDF checks to the primary `same_target`
+p-values. `power_decisions.csv` separates target-selection probability,
+marginal detection power, and conditional power given that the signal was
+targeted. By default, power is declared sufficient only when the lower 95%
+confidence bound for conditional power is at least 80%; change this scientific
+requirement with `--minimum-conditional-power`.
 
 ## Repository Structure
 

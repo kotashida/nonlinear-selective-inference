@@ -31,6 +31,12 @@ def test_parse_rf_parameter_requires_name_value_syntax():
         raise AssertionError("Expected argparse.ArgumentTypeError")
 
 
+def test_cli_accepts_three_builtin_selection_methods():
+    for method in ("shap", "mutual_information", "marginal_screening"):
+        parsed = example.parse_args(["--selection-method", method])
+        assert parsed.selection_method == method
+
+
 def test_main_saves_feature_level_selective_p_values(monkeypatch, tmp_path):
     diagnostics = pd.DataFrame(
         [

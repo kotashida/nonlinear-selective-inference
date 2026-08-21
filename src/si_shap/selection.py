@@ -1,4 +1,4 @@
-"""Deterministic, configurable SHAP-based feature selection."""
+"""Deterministic, interchangeable feature-selection methods."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ import numpy as np
 import shap
 from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.feature_selection import mutual_info_regression
 
 
 MAX_CPU_CORES = 32
@@ -39,11 +40,20 @@ TARGET_RULES = ("all_selected", "uniform_from_selected")
 
 @dataclass(frozen=True)
 class SelectionResult:
-    """One complete fit -> importance -> rank -> top-k selection result."""
+    """One complete fit -> score -> rank -> top-k selection result.
+
+    ``importance`` is retained as the field name for backward compatibility;
+    it contains the generic feature score produced by any selector.
+    """
 
     selected_features: np.ndarray
     importance: np.ndarray
     ranking: np.ndarray
+
+    @property
+    def scores(self) -> np.ndarray:
+        """Generic alias for the backward-compatible ``importance`` field."""
+        return self.importance
 
 
 @runtime_checkable
@@ -83,7 +93,7 @@ def _top_k(scores, k):
     scores = np.asarray(scores, dtype=float)
     if scores.ndim != 1 or not np.all(np.isfinite(scores)):
         raise ValueError(
-            "SHAP importance scores must be a finite one-dimensional array."
+            "Feature scores must be a finite one-dimensional array."
         )
     if (
         isinstance(k, (bool, np.bool_))
@@ -260,6 +270,7 @@ class ShapSelector:
     def get_settings(self) -> Mapping[str, Any]:
         return {
             "selector": type(self).__name__,
+            "selection_method": "shap",
             "importance": "mean_absolute_tree_shap",
             "tie_breaking": "decreasing_importance_then_increasing_feature_index",
             "selection_decimals": self.selection_decimals,
@@ -268,6 +279,92 @@ class ShapSelector:
             ),
             "estimator_params": self.estimator.get_params(deep=False),
         }
+
+
+class MutualInformationSelector:
+    """Top-k screening by estimated feature-response mutual information."""
+
+    def __init__(self, *, random_state: int = 42, n_neighbors: int = 3):
+        if (
+            isinstance(random_state, (bool, np.bool_))
+            or not isinstance(random_state, (int, np.integer))
+            or random_state < 0
+        ):
+            raise ValueError("random_state must be a nonnegative integer.")
+        if (
+            isinstance(n_neighbors, (bool, np.bool_))
+            or not isinstance(n_neighbors, (int, np.integer))
+            or n_neighbors < 1
+        ):
+            raise ValueError("n_neighbors must be a positive integer.")
+        self.random_state = int(random_state)
+        self.n_neighbors = int(n_neighbors)
+
+    def select(self, X, response, k_select) -> SelectionResult:
+        X = np.asarray(X, dtype=float)
+        response = np.asarray(response, dtype=float)
+        if X.ndim != 2 or response.ndim != 1 or X.shape[0] != response.size:
+            raise ValueError("X must be two-dimensional and match the response.")
+        scores = mutual_info_regression(
+            X,
+            response,
+            discrete_features=False,
+            n_neighbors=self.n_neighbors,
+            random_state=self.random_state,
+        )
+        selected = _top_k(scores, k_select)
+        ranking = _top_k(scores, X.shape[1])
+        return SelectionResult(selected, scores, ranking)
+
+    def get_settings(self) -> Mapping[str, Any]:
+        return {
+            "selector": type(self).__name__,
+            "selection_method": "mutual_information",
+            "importance": "mutual_information_regression",
+            "tie_breaking": "decreasing_importance_then_increasing_feature_index",
+            "random_state": self.random_state,
+            "n_neighbors": self.n_neighbors,
+        }
+
+
+class MarginalCorrelationSelector:
+    """Top-k marginal screening by absolute Pearson correlation."""
+
+    def select(self, X, response, k_select) -> SelectionResult:
+        X = np.asarray(X, dtype=float)
+        response = np.asarray(response, dtype=float)
+        if X.ndim != 2 or response.ndim != 1 or X.shape[0] != response.size:
+            raise ValueError("X must be two-dimensional and match the response.")
+        centered_X = X - X.mean(axis=0, keepdims=True)
+        centered_response = response - response.mean()
+        denominator = np.linalg.norm(centered_X, axis=0) * np.linalg.norm(
+            centered_response
+        )
+        numerator = np.abs(centered_X.T @ centered_response)
+        scores = np.divide(
+            numerator,
+            denominator,
+            out=np.zeros(X.shape[1], dtype=float),
+            where=denominator > 0.0,
+        )
+        selected = _top_k(scores, k_select)
+        ranking = _top_k(scores, X.shape[1])
+        return SelectionResult(selected, scores, ranking)
+
+    def get_settings(self) -> Mapping[str, Any]:
+        return {
+            "selector": type(self).__name__,
+            "selection_method": "marginal_screening",
+            "importance": "absolute_pearson_correlation",
+            "tie_breaking": "decreasing_importance_then_increasing_feature_index",
+        }
+
+
+_BUILTIN_SELECTOR_TYPES = (
+    ShapSelector,
+    MutualInformationSelector,
+    MarginalCorrelationSelector,
+)
 
 
 class _MemoizedSelector:
@@ -298,14 +395,39 @@ def _validate_selector(selector) -> Selector:
 
 
 def make_selector(
-    *, estimator=None, selector=None, selection_decimals=10, rf_params=None
+    *,
+    selection_method: str | None = None,
+    estimator=None,
+    selector=None,
+    selection_decimals=10,
+    rf_params=None,
 ) -> Selector:
-    """Resolve public selector options while preserving the legacy RF shortcut."""
+    """Resolve a built-in or custom selector.
+
+    The built-in methods are ``shap`` (the backward-compatible default),
+    ``mutual_information``, and ``marginal_screening``.
+    """
     supplied = sum(value is not None for value in (estimator, selector, rf_params))
     if supplied > 1:
         raise ValueError("Pass only one of estimator, selector, or rf_params.")
     if selector is not None:
+        if selection_method is not None:
+            raise ValueError("Pass either selection_method or selector, not both.")
         return _validate_selector(selector)
+    if selection_method is not None and not isinstance(selection_method, str):
+        raise TypeError("selection_method must be a string or None.")
+    method = "shap" if selection_method is None else selection_method
+    if method not in {"shap", "mutual_information", "marginal_screening"}:
+        raise ValueError(
+            "selection_method must be 'shap', 'mutual_information', or "
+            "'marginal_screening'."
+        )
+    if method != "shap" and (estimator is not None or rf_params is not None):
+        raise ValueError("estimator and rf_params are available only for SHAP selection.")
+    if method == "mutual_information":
+        return MutualInformationSelector()
+    if method == "marginal_screening":
+        return MarginalCorrelationSelector()
     if rf_params is not None:
         estimator = RandomForestRegressor(**_resolve_rf_params(rf_params))
     return ShapSelector(estimator, selection_decimals=selection_decimals)

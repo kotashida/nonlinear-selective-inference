@@ -13,10 +13,13 @@ from sklearn.ensemble import RandomForestRegressor
 
 from si_shap.selection import (
     MAX_CPU_CORES,
+    MarginalCorrelationSelector,
+    MutualInformationSelector,
     RF_PARAMS,
     _resolve_rf_params,
     _top_k,
     ShapSelector,
+    make_selector,
     selection_event_holds,
     target_from_selected_set,
 )
@@ -165,3 +168,52 @@ def test_shap_selector_explicitly_rejects_multioutput_shap_values():
 
     with pytest.raises(ValueError, match="one-dimensional responses"):
         selector.select(X, response, 1)
+
+
+@pytest.mark.parametrize(
+    ("method", "expected_type"),
+    [
+        ("shap", ShapSelector),
+        ("mutual_information", MutualInformationSelector),
+        ("marginal_screening", MarginalCorrelationSelector),
+    ],
+)
+def test_make_selector_resolves_three_builtin_methods(method, expected_type):
+    assert isinstance(make_selector(selection_method=method), expected_type)
+
+
+def test_make_selector_rejects_unknown_or_conflicting_methods():
+    with pytest.raises(ValueError, match="selection_method must be"):
+        make_selector(selection_method="unknown")
+    with pytest.raises(ValueError, match="either selection_method or selector"):
+        make_selector(selection_method="shap", selector=MarginalCorrelationSelector())
+    with pytest.raises(ValueError, match="only for SHAP"):
+        make_selector(
+            selection_method="mutual_information",
+            estimator=RandomForestRegressor(random_state=42),
+        )
+
+
+@pytest.mark.parametrize(
+    "selector", [MutualInformationSelector(), MarginalCorrelationSelector()]
+)
+def test_non_shap_builtin_selectors_are_deterministic(selector):
+    rng = np.random.default_rng(31)
+    X = rng.normal(size=(30, 5))
+    y = X[:, 3] + 0.1 * rng.normal(size=30)
+
+    first = selector.select(X, y, 2)
+    second = selector.select(X, y, 2)
+
+    assert first.scores.shape == (X.shape[1],)
+    np.testing.assert_array_equal(first.selected_features, first.ranking[:2])
+    np.testing.assert_array_equal(first.ranking, second.ranking)
+    np.testing.assert_array_equal(first.scores, second.scores)
+
+
+def test_marginal_selector_handles_constant_columns_deterministically():
+    X = np.column_stack((np.ones(10), np.arange(10), -np.arange(10)))
+    result = MarginalCorrelationSelector().select(X, np.arange(10), 2)
+
+    np.testing.assert_array_equal(result.selected_features, [1, 2])
+    assert result.scores[0] == 0.0

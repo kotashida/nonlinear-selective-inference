@@ -1,8 +1,8 @@
-"""Run finite-sample-valid SHAP selective inference or exploratory AIS.
+"""Run finite-sample-valid selective inference or exploratory AIS.
 
 This executable example generates data under the project's global-null model,
-selects the top-k features by mean absolute Tree SHAP importance, and computes
-one conditional Monte Carlo selective p-value for every selected feature.
+selects top-k features with one of three built-in methods, and computes one
+conditional Monte Carlo selective p-value for every selected feature.
 """
 
 from __future__ import annotations
@@ -57,6 +57,11 @@ def parse_args(argv=None):
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--selection-decimals", type=int, default=10)
+    parser.add_argument(
+        "--selection-method",
+        choices=("shap", "mutual_information", "marginal_screening"),
+        default="shap",
+    )
     parser.add_argument(
         "--selection-event",
         choices=("exact_set", "feature_inclusion", "exact_ranking"),
@@ -118,7 +123,7 @@ def _p_values_frame(result):
 
 def main(argv=None):
     args = parse_args(argv)
-    rf_params = _rf_parameters(args.rf_param)
+    rf_params = _rf_parameters(args.rf_param) or None
 
     result = run_simulation(
         n_iters=args.n_iters,
@@ -134,6 +139,7 @@ def main(argv=None):
         max_final_samples=args.max_final_samples,
         min_denominator_ess=args.min_denominator_ess,
         min_tail_ess=args.min_tail_ess,
+        selection_method=args.selection_method,
         rf_params=rf_params,
         selection_event=args.selection_event,
         multiplicity=args.multiplicity,
@@ -161,6 +167,7 @@ def main(argv=None):
                 "max_final_samples": args.max_final_samples,
                 "min_denominator_ess": args.min_denominator_ess,
                 "min_tail_ess": args.min_tail_ess,
+                "selection_method": args.selection_method,
                 "selection_event": args.selection_event,
                 "multiplicity": args.multiplicity,
                 "inference_method": args.inference_method,

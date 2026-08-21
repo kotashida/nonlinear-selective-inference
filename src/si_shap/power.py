@@ -1,4 +1,4 @@
-"""Paired power comparisons for alternative SHAP selection events."""
+"""Paired power comparisons for alternative selection events."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from tqdm.auto import tqdm
 from .api import selective_inference
 from .inference import _spline_effect_basis
 from .selection import (
-    ShapSelector,
+    _BUILTIN_SELECTOR_TYPES,
     _MemoizedSelector,
     _resolve_rf_params,
     _validate_selection_event,
@@ -30,6 +30,8 @@ from .selection import (
 )
 from .simulation import (
     SIMULATION_SIGMA,
+    _generate_gaussian_design,
+    _validate_feature_correlation,
     _validate_inputs,
     _validate_positive_finite,
     _validate_seed,
@@ -98,6 +100,7 @@ def _generate_power_dataset(
     signal_features: Sequence[int],
     signal_strength: float,
     *,
+    feature_correlation: float = 0.0,
     return_mean: bool = False,
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Generate independent Gaussian features with smooth nonlinear signals.
@@ -105,7 +108,9 @@ def _generate_power_dataset(
     Each signal feature contributes a centered effect with empirical standard
     deviation ``signal_strength``; the Gaussian noise standard deviation is 1.
     """
-    X = rng.standard_normal((n_samples, n_features))
+    X = _generate_gaussian_design(
+        rng, n_samples, n_features, feature_correlation
+    )
     mean_response = np.zeros(n_samples)
     for feature in signal_features:
         mean_response += signal_strength * _nonlinear_effect(X[:, feature])
@@ -294,6 +299,7 @@ def compare_selection_event_power(
     *,
     signal_features: Sequence[int] = (0,),
     signal_strength: float = 1.0,
+    feature_correlation: float = 0.0,
     selection_events: Sequence[str] = DEFAULT_SELECTION_EVENTS,
     alpha: float = 0.05,
     seed: int = 123,
@@ -304,6 +310,7 @@ def compare_selection_event_power(
     max_final_samples: int = 800,
     min_denominator_ess: float = 80.0,
     min_tail_ess: float = 15.0,
+    selection_method: str | None = None,
     rf_params=None,
     estimator=None,
     selector=None,
@@ -322,6 +329,7 @@ def compare_selection_event_power(
     signal_features, selection_events = _validate_power_inputs(
         n_features, signal_features, signal_strength, selection_events
     )
+    feature_correlation = _validate_feature_correlation(feature_correlation)
     if k_select == 1 and len(selection_events) > 1:
         warnings.warn(
             "For k_select=1, feature_inclusion, exact_set, and same_target "
@@ -355,6 +363,12 @@ def compare_selection_event_power(
         raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
+    if (
+        selection_method is not None
+        and selection_method != "shap"
+        and rf_params is not None
+    ):
+        raise ValueError("rf_params are available only for SHAP selection.")
     seed = _validate_seed("seed", seed)
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
@@ -373,10 +387,13 @@ def compare_selection_event_power(
 
     resolved_rf_params = (
         _resolve_rf_params(rf_params)
-        if estimator is None and selector is None
+        if (selection_method is None or selection_method == "shap")
+        and estimator is None
+        and selector is None
         else None
     )
     resolved_selector = make_selector(
+        selection_method=selection_method,
         estimator=estimator,
         selector=selector,
         selection_decimals=selection_decimals,
@@ -402,13 +419,14 @@ def compare_selection_event_power(
             n_features,
             signal_features,
             signal_strength,
+            feature_correlation=feature_correlation,
             return_mean=True,
         )
         shared_ais_seed = int(ais_seed.generate_state(1, dtype=np.uint32)[0])
         shared_target_seed = int(target_seed.generate_state(1, dtype=np.uint32)[0])
         iteration_selector = (
             _MemoizedSelector(resolved_selector)
-            if isinstance(resolved_selector, ShapSelector)
+            if isinstance(resolved_selector, _BUILTIN_SELECTOR_TYPES)
             else resolved_selector
         )
         observed_result = iteration_selector.select(X, response, k_select)
@@ -533,12 +551,16 @@ def compare_selection_event_power(
             "k_select": k_select,
             "signal_features": signal_features,
             "signal_strength": float(signal_strength),
+            "feature_correlation": feature_correlation,
             "selection_events": selection_events,
             "target_rule": "uniform_from_selected",
             "target_randomization": "one fixed auxiliary_u per iteration",
             "alpha": alpha,
             "seed": seed,
             "selection_decimals": selection_decimals,
+            "selection_method": dict(resolved_selector.get_settings()).get(
+                "selection_method", "custom"
+            ),
             "multiplicity": multiplicity,
             "inference_method": inference_method,
             "variance_method": "known_simulation_sigma",
@@ -548,7 +570,7 @@ def compare_selection_event_power(
             ),
             "selector_settings": dict(resolved_selector.get_settings()),
             "memoized_selector_within_iteration": isinstance(
-                resolved_selector, ShapSelector
+                resolved_selector, _BUILTIN_SELECTOR_TYPES
             ),
             "pilot_iters": pilot_iters,
             "pilot_samples": pilot_samples,

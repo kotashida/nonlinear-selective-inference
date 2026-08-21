@@ -1,4 +1,4 @@
-"""Orchestration for the SHAP selective-inference simulation."""
+"""Orchestration for selective-inference simulations."""
 
 from __future__ import annotations
 
@@ -41,9 +41,34 @@ def _validate_positive_finite(name, value):
     return float(value)
 
 
-def _generate_null_dataset(rng, n_samples, n_features):
+def _validate_feature_correlation(value):
+    if (
+        not np.isscalar(value)
+        or not np.isfinite(value)
+        or not 0.0 <= float(value) < 1.0
+    ):
+        raise ValueError("feature_correlation must lie in [0, 1).")
+    return float(value)
+
+
+def _generate_gaussian_design(rng, n_samples, n_features, feature_correlation=0.0):
+    """Generate an independent or AR(1)-correlated Gaussian design."""
+    correlation = _validate_feature_correlation(feature_correlation)
+    independent = rng.standard_normal((n_samples, n_features))
+    if correlation == 0.0:
+        return independent
+    indices = np.arange(n_features)
+    covariance = correlation ** np.abs(indices[:, None] - indices[None, :])
+    return independent @ np.linalg.cholesky(covariance).T
+
+
+def _generate_null_dataset(
+    rng, n_samples, n_features, feature_correlation=0.0
+):
     """Generate one global-null data set from a NumPy random generator."""
-    X = rng.standard_normal((n_samples, n_features))
+    X = _generate_gaussian_design(
+        rng, n_samples, n_features, feature_correlation
+    )
     response = rng.standard_normal(n_samples)
     return X, response
 
@@ -228,6 +253,7 @@ def run_simulation(
     multiplicity="none",
     inference_method="conditional_mc",
     stop_when_ess_met=False,
+    selection_method=None,
 ):
     """Run the global-null experiment documented in ``docs/``.
 
@@ -258,6 +284,12 @@ def run_simulation(
     _validate_positive_finite("min_tail_ess", min_tail_ess)
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
+    if (
+        selection_method is not None
+        and selection_method != "shap"
+        and rf_params is not None
+    ):
+        raise ValueError("rf_params are available only for SHAP selection.")
     seed = _validate_seed("seed", seed)
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
@@ -288,13 +320,24 @@ def run_simulation(
             "AIS ESS targets cannot exceed max_final_samples; such targets are "
             "mathematically unattainable."
         )
-    resolved_rf_params = _resolve_rf_params(rf_params) if estimator is None and selector is None else None
+    resolved_rf_params = (
+        _resolve_rf_params(rf_params)
+        if (selection_method is None or selection_method == "shap")
+        and estimator is None
+        and selector is None
+        else None
+    )
     resolved_selector = make_selector(
+        selection_method=selection_method,
         estimator=estimator,
         selector=selector,
         selection_decimals=selection_decimals,
         rf_params=resolved_rf_params,
     )
+    selector_display = {
+        "mutual_information": "Mutual information",
+        "marginal_screening": "Marginal screening",
+    }.get(selection_method, "SHAP")
 
     random_p_values = []
     unadjusted_p_values = []
@@ -384,12 +427,15 @@ def run_simulation(
         "Random", random_p_values, alpha, require_complete=True
     )
     unadjusted_summary, unadjusted_flat = _method_summary(
-        "Unadjusted SHAP", unadjusted_p_values, alpha, require_complete=True
+        f"Unadjusted {selector_display}",
+        unadjusted_p_values,
+        alpha,
+        require_complete=True,
     )
     selective_method_name = (
-        "Selective SHAP (conditional MC)"
+        f"Selective {selector_display} (conditional MC)"
         if inference_method == "conditional_mc"
-        else "Selective SHAP (approximate AIS)"
+        else f"Selective {selector_display} (approximate AIS)"
     )
     selective_summary, selective_flat = _method_summary(
         selective_method_name,
@@ -411,7 +457,7 @@ def run_simulation(
         "summary": summary,
         "p_values": {
             "Random": random_flat,
-            "Unadjusted SHAP": unadjusted_flat,
+            f"Unadjusted {selector_display}": unadjusted_flat,
             selective_method_name: selective_flat,
         },
         "inference_diagnostics": diagnostics,
@@ -424,6 +470,9 @@ def run_simulation(
             "k_select": k_select,
             "seed": seed,
             "selection_decimals": selection_decimals,
+            "selection_method": (
+                "shap" if selection_method is None else selection_method
+            ),
             "rf_params": None if resolved_rf_params is None else resolved_rf_params.copy(),
             "selection_event": selection_event,
             "multiplicity": multiplicity,
