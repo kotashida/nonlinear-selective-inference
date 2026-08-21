@@ -220,6 +220,12 @@ def test_example_writes_calibration_bundle(tmp_path):
     assert expected.issubset(path.name for path in tmp_path.iterdir())
 
 
+def test_null_cli_accepts_three_builtin_selection_methods():
+    for method in ("shap", "mutual_information", "marginal_screening"):
+        parsed = example.parse_args(["--selection-method", method])
+        assert parsed.selection_method == method
+
+
 def test_shard_summary_pools_iterations_and_writes_artifacts(tmp_path):
     events = ["exact_set", "feature_inclusion", "same_target"]
     settings = {

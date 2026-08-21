@@ -108,6 +108,7 @@ def parse_args(argv=None):
     parser.add_argument("--n-features", type=int, default=20)
     parser.add_argument("--k-select", type=int, default=2)
     parser.add_argument("--sigma", type=float, default=1.0)
+    parser.add_argument("--feature-correlation", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--design-seed", type=int)
     parser.add_argument(
@@ -128,6 +129,11 @@ def parse_args(argv=None):
         "--alpha-levels", type=float, nargs="+", default=[0.01, 0.05, 0.10]
     )
     parser.add_argument("--selection-decimals", type=int, default=10)
+    parser.add_argument(
+        "--selection-method",
+        choices=("shap", "mutual_information", "marginal_screening"),
+        default="shap",
+    )
     parser.add_argument("--pilot-iters", type=int, default=3)
     parser.add_argument("--pilot-samples", type=int, default=40)
     parser.add_argument("--final-batch-size", type=int, default=80)
@@ -269,12 +275,14 @@ def _write_results(result, output_dir):
 
 def main(argv=None):
     args = parse_args(argv)
+    rf_params = _rf_parameters(args.rf_param) or None
     result = compare_selection_event_null_calibration(
         n_iters=args.n_iters,
         n_samples=args.n_samples,
         n_features=args.n_features,
         k_select=args.k_select,
         sigma=args.sigma,
+        feature_correlation=args.feature_correlation,
         selection_events=args.selection_events,
         alpha_levels=args.alpha_levels,
         seed=args.seed,
@@ -287,7 +295,8 @@ def main(argv=None):
         max_final_samples=args.max_final_samples,
         min_denominator_ess=args.min_denominator_ess,
         min_tail_ess=args.min_tail_ess,
-        rf_params=_rf_parameters(args.rf_param),
+        selection_method=args.selection_method,
+        rf_params=rf_params,
         inference_method=args.inference_method,
         stop_when_ess_met=args.stop_when_ess_met,
     )

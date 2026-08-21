@@ -42,6 +42,13 @@ def test_example_defaults_to_repository_outputs_folder():
     assert args.max_final_samples == 1600
 
 
+def test_power_cli_accepts_three_builtin_selection_methods():
+    for method in ("shap", "mutual_information", "marginal_screening"):
+        assert power_example.parse_args(
+            ["--selection-method", method]
+        ).selection_method == method
+
+
 def test_calibrated_plus_uses_larger_pilot_and_final_budgets():
     args = power_example.parse_args(["--preset", "calibrated_plus"])
 

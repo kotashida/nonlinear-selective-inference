@@ -140,6 +140,7 @@ def parse_args(argv=None):
     parser.add_argument("--n-features", type=int, default=20)
     parser.add_argument("--k-select", type=int, default=2)
     parser.add_argument("--signal-features", type=int, nargs="+", default=[0])
+    parser.add_argument("--feature-correlation", type=float, default=0.0)
     parser.add_argument(
         "--signal-strength",
         type=float,
@@ -148,6 +149,11 @@ def parse_args(argv=None):
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--selection-decimals", type=int, default=10)
+    parser.add_argument(
+        "--selection-method",
+        choices=("shap", "mutual_information", "marginal_screening"),
+        default="shap",
+    )
     parser.add_argument(
         "--selection-events",
         nargs="+",
@@ -259,8 +265,13 @@ def _plot_power_comparison(result, output_path):
         min(1.0, max(0.15, float(np.max(plotted_values + errors)) + 0.12)),
     )
     axis.set_ylabel("Overall power: P(signal selected and rejected)")
+    selector_name = result.get("settings", {}).get("selector_settings", {}).get(
+        "selection_method", "shap"
+    )
     axis.set_title(
-        "Paired comparison of SHAP selection-conditioning events", pad=12
+        f"Paired comparison of {selector_name.replace('_', ' ')} "
+        "selection-conditioning events",
+        pad=12,
     )
     axis.grid(axis="y", linestyle=":", alpha=0.5)
     figure.tight_layout()
@@ -378,7 +389,7 @@ def _write_results_to_directory(result, output_dir):
 def main(argv=None):
     args = parse_args(argv)
     output_dir = _validate_output_location(args.output_dir)
-    rf_params = _rf_parameters(args.rf_param)
+    rf_params = _rf_parameters(args.rf_param) or None
     result = compare_selection_event_power(
         n_iters=args.n_iters,
         n_samples=args.n_samples,
@@ -386,6 +397,7 @@ def main(argv=None):
         k_select=args.k_select,
         signal_features=args.signal_features,
         signal_strength=args.signal_strength,
+        feature_correlation=args.feature_correlation,
         selection_events=args.selection_events,
         alpha=args.alpha,
         seed=args.seed,
@@ -396,6 +408,7 @@ def main(argv=None):
         max_final_samples=args.max_final_samples,
         min_denominator_ess=args.min_denominator_ess,
         min_tail_ess=args.min_tail_ess,
+        selection_method=args.selection_method,
         rf_params=rf_params,
         multiplicity=args.multiplicity,
         inference_method=args.inference_method,

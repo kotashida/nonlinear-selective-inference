@@ -1,4 +1,4 @@
-"""Numerical selection regions for SHAP-selected features."""
+"""Numerical selection regions after interchangeable feature selection."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from .inference import (
     _spline_effect_basis,
 )
 from .selection import (
-    ShapSelector,
+    _BUILTIN_SELECTOR_TYPES,
     _resolve_rf_params,
     _top_k,
     _tree_shap_importance,
@@ -209,6 +209,7 @@ def compute_selection_regions(
     tail_probability: float = 1e-8,
     proposal_pilot_iters: int = 3,
     proposal_pilot_samples: int = 40,
+    selection_method: str | None = None,
     rf_params=None,
     estimator=None,
     selector=None,
@@ -216,7 +217,7 @@ def compute_selection_regions(
     target_rule: str = "all_selected",
     target_seed: int = 123,
 ) -> list[SelectionRegionResult]:
-    """Generate null data sets and compute top-k SHAP selection regions.
+    """Generate null data sets and compute top-k selection regions.
 
     ``dataset_seeds`` is required so callers choose the generated data sets at
     runtime rather than implicitly relying on a package-level seed sequence.
@@ -276,13 +277,25 @@ def compute_selection_regions(
     target_seed = _validate_seed("target_seed", target_seed)
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
-    resolved_rf_params = _resolve_rf_params(rf_params)
+    if (
+        selection_method is not None
+        and selection_method != "shap"
+        and rf_params is not None
+    ):
+        raise ValueError("rf_params are available only for SHAP selection.")
+    resolved_rf_params = (
+        _resolve_rf_params(rf_params)
+        if (selection_method is None or selection_method == "shap")
+        else None
+    )
     resolved_selector = None
-    if estimator is not None or selector is not None:
+    if selection_method is not None or estimator is not None or selector is not None:
         resolved_selector = make_selector(
+            selection_method=selection_method,
             estimator=estimator,
             selector=selector,
             selection_decimals=selection_decimals,
+            rf_params=rf_params,
         )
 
     def select_response(X, response):
@@ -290,7 +303,7 @@ def compute_selection_regions(
             first_result = resolved_selector.select(X, response, k_select)
             first = np.asarray(first_result.selected_features, dtype=int)
             ranking = np.asarray(first_result.ranking, dtype=int)
-            if not isinstance(resolved_selector, ShapSelector):
+            if not isinstance(resolved_selector, _BUILTIN_SELECTOR_TYPES):
                 second_result = resolved_selector.select(X, response, k_select)
                 second = np.asarray(second_result.selected_features, dtype=int)
                 second_ranking = np.asarray(second_result.ranking, dtype=int)

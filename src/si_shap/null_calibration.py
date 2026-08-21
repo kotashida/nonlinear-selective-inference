@@ -21,14 +21,20 @@ from tqdm.auto import tqdm
 
 from .api import _validate_selection_result, selective_inference
 from .selection import (
-    ShapSelector,
+    _BUILTIN_SELECTOR_TYPES,
     _MemoizedSelector,
     _resolve_rf_params,
     _validate_selection_event,
     make_selector,
     target_from_selected_set,
 )
-from .simulation import _validate_inputs, _validate_positive_finite, _validate_seed
+from .simulation import (
+    _generate_gaussian_design,
+    _validate_feature_correlation,
+    _validate_inputs,
+    _validate_positive_finite,
+    _validate_seed,
+)
 
 
 DEFAULT_NULL_EVENTS = ("feature_inclusion", "exact_set", "same_target")
@@ -265,6 +271,7 @@ def compare_selection_event_null_calibration(
     k_select: int,
     *,
     sigma: float = 1.0,
+    feature_correlation: float = 0.0,
     selection_events: Sequence[str] = DEFAULT_NULL_EVENTS,
     alpha_levels: Sequence[float] = (0.01, 0.05, 0.10),
     seed: int = 123,
@@ -277,6 +284,7 @@ def compare_selection_event_null_calibration(
     max_final_samples: int = 800,
     min_denominator_ess: float = 80.0,
     min_tail_ess: float = 15.0,
+    selection_method: str | None = None,
     rf_params=None,
     estimator=None,
     selector=None,
@@ -299,6 +307,7 @@ def compare_selection_event_null_calibration(
         selection_events,
         alpha_levels,
     )
+    feature_correlation = _validate_feature_correlation(feature_correlation)
     for name, value in {
         "seed": seed,
         "pilot_iters": pilot_iters,
@@ -348,6 +357,12 @@ def compare_selection_event_null_calibration(
         )
     if sum(value is not None for value in (rf_params, estimator, selector)) > 1:
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
+    if (
+        selection_method is not None
+        and selection_method != "shap"
+        and rf_params is not None
+    ):
+        raise ValueError("rf_params are available only for SHAP selection.")
     if k_select == 1:
         warnings.warn(
             "For k_select=1, feature_inclusion, exact_set, and same_target "
@@ -362,15 +377,21 @@ def compare_selection_event_null_calibration(
         if design_seed is None
         else int(design_seed)
     )
-    X = np.random.default_rng(resolved_design_seed).standard_normal(
-        (n_samples, n_features)
+    X = _generate_gaussian_design(
+        np.random.default_rng(resolved_design_seed),
+        n_samples,
+        n_features,
+        feature_correlation,
     )
     resolved_rf_params = (
         _resolve_rf_params(rf_params)
-        if estimator is None and selector is None
+        if (selection_method is None or selection_method == "shap")
+        and estimator is None
+        and selector is None
         else None
     )
     resolved_selector = make_selector(
+        selection_method=selection_method,
         estimator=estimator,
         selector=selector,
         selection_decimals=selection_decimals,
@@ -392,7 +413,7 @@ def compare_selection_event_null_calibration(
         shared_ais_seed = int(ais_seed.generate_state(1, dtype=np.uint32)[0])
         iteration_selector = (
             _MemoizedSelector(resolved_selector)
-            if isinstance(resolved_selector, ShapSelector)
+            if isinstance(resolved_selector, _BUILTIN_SELECTOR_TYPES)
             else resolved_selector
         )
         observed = _validate_selection_result(
@@ -495,6 +516,7 @@ def compare_selection_event_null_calibration(
             "n_features": n_features,
             "k_select": k_select,
             "sigma": float(sigma),
+            "feature_correlation": feature_correlation,
             "variance_method": "known_simulation_sigma",
             "selection_events": events,
             "target_rule": "uniform_from_selected",
@@ -511,6 +533,9 @@ def compare_selection_event_null_calibration(
             "design_seed": resolved_design_seed,
             "fixed_design": True,
             "selection_decimals": selection_decimals,
+            "selection_method": dict(resolved_selector.get_settings()).get(
+                "selection_method", "custom"
+            ),
             "rf_params": (
                 None if resolved_rf_params is None else resolved_rf_params.copy()
             ),
