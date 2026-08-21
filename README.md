@@ -102,6 +102,56 @@ targeted. By default, power is declared sufficient only when the lower 95%
 confidence bound for conditional power is at least 80%; change this scientific
 requirement with `--minimum-conditional-power`.
 
+On a Linux server with a 32-core allocation, run the primary confirmatory
+matrix as independent iteration shards and pool the raw results before making
+any decisions:
+
+```bash
+source .venv/bin/activate
+nohup bash examples/run_selection_method_validation_shards.sh \
+  > outputs/selection_method_validation_launcher.log 2>&1 &
+```
+
+The defaults request exactly 5,000 null and 5,000 power iterations per
+configuration for all three selectors, the baseline and correlated designs,
+fresh target randomization, the first signal location, and four signal
+strengths. They use 800 conditional Monte Carlo proposals, require at least 300
+selected signal targets, and require a lower 95% conditional-power bound of
+80%. As in the retained
+`outputs/null_calibration_fixed_u_0p75_seed_123_shards` run, the launcher uses
+10 parallel shards and three random-forest workers per shard: 30 cores total,
+leaving two cores for the operating system. Results are written beneath
+`outputs/selection_method_validation_seed_20260821_shards`, with globally
+adjusted decisions in its `pooled_summary` directory.
+
+Settings can be overridden without editing the script. For example, this
+smaller server check uses 320 iterations per configuration:
+
+```bash
+OUTPUT_ROOT=outputs/selection_method_validation_pilot_shards \
+TOTAL_NULL_ITERS=320 TOTAL_POWER_ITERS=320 MC_PROPOSALS=800 \
+MIN_CALIBRATION_ITERS=320 MIN_SIGNAL_TARGETS=30 \
+bash examples/run_selection_method_validation_shards.sh
+```
+
+After the primary run, the secondary matrix can add the two fixed auxiliary
+values, second signal location, larger designs, and the weakest signal:
+
+```bash
+OUTPUT_ROOT=outputs/selection_method_validation_secondary_shards \
+DESIGNS="baseline correlated larger_sample high_dimensional" \
+AUXILIARY_VALUES="fresh 0.25 0.75" \
+SIGNAL_STRENGTHS="0.15 0.30 0.50 0.75 1.00" \
+SIGNAL_POSITIONS="first middle" \
+TOTAL_NULL_ITERS=1000 TOTAL_POWER_ITERS=1000 \
+MIN_CALIBRATION_ITERS=1000 MIN_SIGNAL_TARGETS=100 \
+bash examples/run_selection_method_validation_shards.sh
+```
+
+Rerunning with the same output directory resumes completed configurations. If
+the requested scientific settings differ from `run_config.txt`, the launcher
+stops and requires a new output directory rather than silently mixing runs.
+
 ## Repository Structure
 
 The following tree shows the current layout of source files and retained project artifacts. Local environments, caches, and intermediate build files such as `.venv/` are described later.
