@@ -55,8 +55,8 @@ def _validate_null_inputs(
     if isinstance(selection_events, str):
         raise TypeError("selection_events must be a sequence, not one string.")
     events = tuple(selection_events)
-    if len(events) < 2 or len(set(events)) != len(events):
-        raise ValueError("selection_events must contain at least two unique events.")
+    if not events or len(set(events)) != len(events):
+        raise ValueError("selection_events must contain at least one unique event.")
     for event in events:
         _validate_selection_event(event)
 
@@ -275,6 +275,7 @@ def compare_selection_event_null_calibration(
     selection_events: Sequence[str] = DEFAULT_NULL_EVENTS,
     alpha_levels: Sequence[float] = (0.01, 0.05, 0.10),
     seed: int = 123,
+    iteration_start: int = 0,
     design_seed: int | None = None,
     fixed_auxiliary_u: float | None = None,
     selection_decimals: int = 10,
@@ -310,6 +311,7 @@ def compare_selection_event_null_calibration(
     feature_correlation = _validate_feature_correlation(feature_correlation)
     for name, value in {
         "seed": seed,
+        "iteration_start": iteration_start,
         "pilot_iters": pilot_iters,
         "pilot_samples": pilot_samples,
         "final_batch_size": final_batch_size,
@@ -319,6 +321,8 @@ def compare_selection_event_null_calibration(
             value, (int, np.integer)
         ):
             raise TypeError(f"{name} must be an integer.")
+    if iteration_start < 0:
+        raise ValueError("iteration_start must be nonnegative.")
     if design_seed is not None and (
         isinstance(design_seed, (bool, np.bool_))
         or not isinstance(design_seed, (int, np.integer))
@@ -399,9 +403,12 @@ def compare_selection_event_null_calibration(
     )
 
     records = []
-    iteration_seeds = iteration_parent.spawn(n_iters)
+    iteration_seeds = iteration_parent.spawn(iteration_start + n_iters)[
+        iteration_start:
+    ]
     for iteration, iteration_seed in enumerate(
-        tqdm(iteration_seeds, desc="Calibrating selection events"), start=1
+        tqdm(iteration_seeds, desc="Calibrating selection events"),
+        start=iteration_start + 1,
     ):
         response_seed, target_seed, ais_seed = iteration_seed.spawn(3)
         response = (
@@ -512,6 +519,7 @@ def compare_selection_event_null_calibration(
         "fixed_design": X.copy(),
         "settings": {
             "n_iters": n_iters,
+            "iteration_start": iteration_start,
             "n_samples": n_samples,
             "n_features": n_features,
             "k_select": k_select,

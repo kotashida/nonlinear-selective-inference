@@ -115,7 +115,11 @@ def _validate_settings(shards: list[Path], settings: list[dict]) -> None:
 
 
 def _read_configuration_frames(
-    shards: list[Path], relative_path: Path, *, expected_per_shard: list[int]
+    shards: list[Path],
+    relative_path: Path,
+    *,
+    expected_per_shard: list[int],
+    primary_event: str = PRIMARY_EVENT,
 ) -> pd.DataFrame:
     frames = []
     for shard, expected in zip(shards, expected_per_shard):
@@ -123,10 +127,10 @@ def _read_configuration_frames(
         if not path.is_file():
             raise FileNotFoundError(f"Missing shard result: {path}")
         frame = pd.read_csv(path)
-        primary_count = int((frame["selection_event"] == PRIMARY_EVENT).sum())
+        primary_count = int((frame["selection_event"] == primary_event).sum())
         if primary_count != expected:
             raise ValueError(
-                f"{path} has {primary_count} {PRIMARY_EVENT} rows; expected {expected}."
+                f"{path} has {primary_count} {primary_event} rows; expected {expected}."
             )
         frame.insert(0, "validation_shard", shard.name)
         frames.append(frame)
@@ -155,6 +159,7 @@ def summarize_shards(input_dir: Path, output_dir: Path, expected_shards=None):
     settings = [_read_settings(shard) for shard in shards]
     _validate_settings(shards, settings)
     reference = settings[0]
+    primary_event = reference["primary_selection_event"]
     null_counts = [int(item["n_null_iters"]) for item in settings]
     power_counts = [int(item["n_power_iters"]) for item in settings]
 
@@ -169,7 +174,10 @@ def summarize_shards(input_dir: Path, output_dir: Path, expected_shards=None):
                 _validate_shared_design(shards, relative_directory)
                 relative = relative_directory / "p_value_results.csv"
                 frame = _read_configuration_frames(
-                    shards, relative, expected_per_shard=null_counts
+                    shards,
+                    relative,
+                    expected_per_shard=null_counts,
+                    primary_event=primary_event,
                 )
                 calibration_rows.extend(
                     _calibration_rows(
@@ -177,6 +185,7 @@ def summarize_shards(input_dir: Path, output_dir: Path, expected_shards=None):
                         method=method,
                         design=design_name,
                         auxiliary_regime=regime,
+                        primary_event=primary_event,
                     )
                 )
 
@@ -191,7 +200,10 @@ def summarize_shards(input_dir: Path, output_dir: Path, expected_shards=None):
                         / "target_results.csv"
                     )
                     frame = _read_configuration_frames(
-                        shards, relative, expected_per_shard=power_counts
+                        shards,
+                        relative,
+                        expected_per_shard=power_counts,
+                        primary_event=primary_event,
                     )
                     power_rows.append(
                         _power_row(
@@ -206,6 +218,7 @@ def summarize_shards(input_dir: Path, output_dir: Path, expected_shards=None):
                             minimum_signal_targets=reference[
                                 "minimum_signal_targets"
                             ],
+                            primary_event=primary_event,
                         )
                     )
 
@@ -230,9 +243,9 @@ def summarize_shards(input_dir: Path, output_dir: Path, expected_shards=None):
     with (output_dir / "validation_settings.json").open("w", encoding="utf-8") as file:
         json.dump(pooled_settings, file, indent=2, sort_keys=True)
 
-    print("\nPooled calibration decisions (same_target):")
+    print(f"\nPooled calibration decisions ({primary_event}):")
     print(calibration.to_string(index=False))
-    print("\nPooled power decisions (same_target):")
+    print(f"\nPooled power decisions ({primary_event}):")
     print(power.to_string(index=False))
     print(f"\nSaved pooled validation bundle to {output_dir}")
     return {"calibration": calibration, "power": power, "settings": pooled_settings}

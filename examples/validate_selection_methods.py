@@ -106,6 +106,12 @@ PRESETS = {
 }
 PRIMARY_EVENT = "same_target"
 COMPARISON_EVENTS = ("feature_inclusion", PRIMARY_EVENT)
+SELECTION_EVENT_CHOICES = (
+    "feature_inclusion",
+    "exact_set",
+    "same_target",
+    "exact_ranking",
+)
 ALPHA_LEVELS = (0.01, 0.05, 0.10)
 DEFAULT_MIN_CALIBRATION_ITERATIONS = 1000
 DEFAULT_MIN_SIGNAL_TARGETS = 100
@@ -172,6 +178,7 @@ def _load_or_run_null(
     seed: int,
     design_seed: int | None = None,
     rf_jobs: int = 32,
+    selection_events: tuple[str, ...] = COMPARISON_EVENTS,
 ):
     result_path = output_dir / "p_value_results.csv"
     if result_path.is_file() and not overwrite:
@@ -180,7 +187,7 @@ def _load_or_run_null(
         n_iters=n_iters,
         **design,
         selection_method=method,
-        selection_events=COMPARISON_EVENTS,
+        selection_events=selection_events,
         alpha_levels=ALPHA_LEVELS,
         fixed_auxiliary_u=fixed_auxiliary_u,
         seed=seed,
@@ -207,6 +214,7 @@ def _load_or_run_power(
     max_final_samples: int,
     seed: int,
     rf_jobs: int = 32,
+    selection_events: tuple[str, ...] = COMPARISON_EVENTS,
 ):
     result_path = output_dir / "target_results.csv"
     if result_path.is_file() and not overwrite:
@@ -219,7 +227,7 @@ def _load_or_run_power(
         signal_strength=signal_strength,
         selection_method=method,
         rf_params={"n_jobs": rf_jobs} if method == "shap" else None,
-        selection_events=COMPARISON_EVENTS,
+        selection_events=selection_events,
         seed=seed,
         inference_method="conditional_mc",
         final_batch_size=min(80, max_final_samples),
@@ -230,8 +238,10 @@ def _load_or_run_power(
     return result["target_results"]
 
 
-def _calibration_rows(frame, *, method, design, auxiliary_regime):
-    primary = frame[frame["selection_event"] == PRIMARY_EVENT]
+def _calibration_rows(
+    frame, *, method, design, auxiliary_regime, primary_event=PRIMARY_EVENT
+):
+    primary = frame[frame["selection_event"] == primary_event]
     p_values = primary["p_value"].to_numpy(dtype=float)
     finite = p_values[np.isfinite(p_values)]
     rows = []
@@ -242,7 +252,7 @@ def _calibration_rows(frame, *, method, design, auxiliary_regime):
                 "selection_method": method,
                 "design": design,
                 "auxiliary_regime": auxiliary_regime,
-                "selection_event": PRIMARY_EVENT,
+                "selection_event": primary_event,
                 "alpha": alpha,
                 "n_iterations": len(primary),
                 "n_failed": int(np.sum(~np.isfinite(p_values))),
@@ -277,8 +287,9 @@ def _power_row(
     signal_strength,
     minimum_conditional_power,
     minimum_signal_targets=DEFAULT_MIN_SIGNAL_TARGETS,
+    primary_event=PRIMARY_EVENT,
 ):
-    primary = frame[frame["selection_event"] == PRIMARY_EVENT].copy()
+    primary = frame[frame["selection_event"] == primary_event].copy()
     signal_targets = primary[primary["target_is_signal"].astype(bool)]
     finite_signal = signal_targets[np.isfinite(signal_targets["p_value"])]
     signal_successes = int(finite_signal["rejected"].astype(bool).sum())
@@ -296,7 +307,7 @@ def _power_row(
     return {
         "selection_method": method,
         "design": design,
-        "selection_event": PRIMARY_EVENT,
+        "selection_event": primary_event,
         "signal_feature": signal_feature,
         "signal_strength": signal_strength,
         "n_iterations": len(primary),
@@ -400,6 +411,22 @@ def parse_args(argv=None):
         metavar="1..32",
         help="Random-forest workers per SHAP process (default: 32).",
     )
+    parser.add_argument(
+        "--selection-events",
+        nargs="+",
+        choices=SELECTION_EVENT_CHOICES,
+        default=list(COMPARISON_EVENTS),
+        help=(
+            "conditioning events to compare; include same_target because it is "
+            "the primary validation event"
+        ),
+    )
+    parser.add_argument(
+        "--primary-selection-event",
+        choices=SELECTION_EVENT_CHOICES,
+        default=PRIMARY_EVENT,
+        help="event used for calibration and power threshold decisions",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     return parser.parse_args(argv)
@@ -407,6 +434,14 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    selection_events = tuple(args.selection_events)
+    if not selection_events or len(set(selection_events)) != len(selection_events):
+        raise ValueError("--selection-events must contain at least one unique event.")
+    primary_event = args.primary_selection_event
+    if primary_event not in selection_events:
+        raise ValueError(
+            f"--selection-events must include the primary event {primary_event!r}."
+        )
     preset = dict(PRESETS[args.preset])
     designs = tuple(args.designs or preset["designs"])
     n_null_iters = args.n_null_iters or preset["n_null_iters"]
@@ -456,6 +491,7 @@ def main(argv=None):
                     seed=_seed(args.seed, method_index, design_index, auxiliary_index),
                     design_seed=shared_design_seed,
                     rf_jobs=args.rf_jobs,
+                    selection_events=selection_events,
                 )
                 calibration_rows.extend(
                     _calibration_rows(
@@ -463,6 +499,7 @@ def main(argv=None):
                         method=method,
                         design=design_name,
                         auxiliary_regime=regime,
+                        primary_event=primary_event,
                     )
                 )
 
@@ -496,6 +533,7 @@ def main(argv=None):
                             strength_index,
                         ),
                         rf_jobs=args.rf_jobs,
+                        selection_events=selection_events,
                     )
                     power_rows.append(
                         _power_row(
@@ -506,6 +544,7 @@ def main(argv=None):
                             signal_strength=strength,
                             minimum_conditional_power=args.minimum_conditional_power,
                             minimum_signal_targets=args.minimum_signal_targets,
+                            primary_event=primary_event,
                         )
                     )
 
@@ -529,8 +568,8 @@ def main(argv=None):
         "minimum_conditional_power": args.minimum_conditional_power,
         "minimum_calibration_iterations": args.minimum_calibration_iterations,
         "minimum_signal_targets": args.minimum_signal_targets,
-        "primary_selection_event": PRIMARY_EVENT,
-        "comparison_events": COMPARISON_EVENTS,
+        "primary_selection_event": primary_event,
+        "comparison_events": selection_events,
         "alpha_levels": ALPHA_LEVELS,
         "seed": args.seed,
         "design_seed": args.design_seed,
@@ -542,9 +581,9 @@ def main(argv=None):
     ) as file:
         json.dump(settings, file, indent=2, sort_keys=True)
 
-    print("\nCalibration decisions (same_target):")
+    print(f"\nCalibration decisions ({primary_event}):")
     print(calibration.to_string(index=False))
-    print("\nPower decisions (same_target):")
+    print(f"\nPower decisions ({primary_event}):")
     print(power.to_string(index=False))
     print(f"\nSaved validation bundle to {output_dir}")
     return {"calibration": calibration, "power": power, "settings": settings}

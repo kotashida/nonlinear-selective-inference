@@ -74,8 +74,8 @@ def _validate_power_inputs(
     if isinstance(selection_events, str):
         raise TypeError("selection_events must be a sequence, not one string.")
     normalized_events = tuple(selection_events)
-    if len(normalized_events) < 2:
-        raise ValueError("selection_events must contain at least two events.")
+    if not normalized_events:
+        raise ValueError("selection_events must contain at least one event.")
     if len(set(normalized_events)) != len(normalized_events):
         raise ValueError("selection_events must not contain duplicates.")
     for selection_event in normalized_events:
@@ -303,6 +303,7 @@ def compare_selection_event_power(
     selection_events: Sequence[str] = DEFAULT_SELECTION_EVENTS,
     alpha: float = 0.05,
     seed: int = 123,
+    iteration_start: int = 0,
     selection_decimals: int = 10,
     pilot_iters: int = 3,
     pilot_samples: int = 40,
@@ -370,6 +371,13 @@ def compare_selection_event_power(
     ):
         raise ValueError("rf_params are available only for SHAP selection.")
     seed = _validate_seed("seed", seed)
+    if (
+        isinstance(iteration_start, (bool, np.bool_))
+        or not isinstance(iteration_start, (int, np.integer))
+    ):
+        raise TypeError("iteration_start must be an integer.")
+    if iteration_start < 0:
+        raise ValueError("iteration_start must be nonnegative.")
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
     if inference_method not in {"conditional_mc", "ais"}:
@@ -408,9 +416,12 @@ def compare_selection_event_power(
     feature_records = []
     target_records = []
 
-    iteration_seeds = np.random.SeedSequence(seed).spawn(n_iters)
+    iteration_seeds = np.random.SeedSequence(seed).spawn(
+        iteration_start + n_iters
+    )[iteration_start:]
     for iteration, iteration_seed in enumerate(
-        tqdm(iteration_seeds, desc="Comparing selection events"), start=1
+        tqdm(iteration_seeds, desc="Comparing selection events"),
+        start=iteration_start + 1,
     ):
         data_seed, target_seed, ais_seed = iteration_seed.spawn(3)
         X, response, mean_response = _generate_power_dataset(
@@ -546,6 +557,7 @@ def compare_selection_event_power(
         "alpha": alpha,
         "settings": {
             "n_iters": n_iters,
+            "iteration_start": iteration_start,
             "n_samples": n_samples,
             "n_features": n_features,
             "k_select": k_select,
@@ -554,7 +566,10 @@ def compare_selection_event_power(
             "feature_correlation": feature_correlation,
             "selection_events": selection_events,
             "target_rule": "uniform_from_selected",
-            "target_randomization": "one fixed auxiliary_u per iteration",
+            "target_randomization": (
+                "fresh auxiliary_u across iterations; shared across events "
+                "within each iteration"
+            ),
             "alpha": alpha,
             "seed": seed,
             "selection_decimals": selection_decimals,

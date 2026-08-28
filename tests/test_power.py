@@ -316,7 +316,7 @@ def test_power_dataset_can_return_the_fixed_design_mean():
         ((0, 0), 1.0, ("exact_set", "feature_inclusion"), ValueError),
         ((4,), 1.0, ("exact_set", "feature_inclusion"), ValueError),
         ((0,), 0.0, ("exact_set", "feature_inclusion"), ValueError),
-        ((0,), 1.0, ("exact_set",), ValueError),
+        ((0,), 1.0, (), ValueError),
         ((0,), 1.0, ("exact_set", "exact_set"), ValueError),
     ],
 )
@@ -341,6 +341,7 @@ def test_comparison_pairs_data_and_reports_power_difference(monkeypatch):
                 "y": y.copy(),
                 "selection_event": selection_event,
                 "ais_seed": kwargs["ais_seed"],
+                "target_seed": kwargs["target_seed"],
                 "target_feature": target_feature,
                 "auxiliary_u": kwargs["auxiliary_u"],
             }
@@ -390,8 +391,10 @@ def test_comparison_pairs_data_and_reports_power_difference(monkeypatch):
             np.testing.assert_array_equal(group[0]["X"], call["X"])
             np.testing.assert_array_equal(group[0]["y"], call["y"])
             assert group[0]["ais_seed"] == call["ais_seed"]
+            assert group[0]["target_seed"] == call["target_seed"]
             assert group[0]["target_feature"] == call["target_feature"]
             assert group[0]["auxiliary_u"] == call["auxiliary_u"]
+    assert calls[0]["target_seed"] != calls[3]["target_seed"]
 
 
 def test_failed_signal_test_makes_strict_power_unavailable(monkeypatch):

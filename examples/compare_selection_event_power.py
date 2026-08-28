@@ -148,6 +148,7 @@ def parse_args(argv=None):
     )
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--iteration-start", type=int, default=0)
     parser.add_argument("--selection-decimals", type=int, default=10)
     parser.add_argument(
         "--selection-method",
@@ -401,6 +402,7 @@ def main(argv=None):
         selection_events=args.selection_events,
         alpha=args.alpha,
         seed=args.seed,
+        iteration_start=args.iteration_start,
         selection_decimals=args.selection_decimals,
         pilot_iters=args.pilot_iters,
         pilot_samples=args.pilot_samples,

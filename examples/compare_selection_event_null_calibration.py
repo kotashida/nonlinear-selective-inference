@@ -110,6 +110,7 @@ def parse_args(argv=None):
     parser.add_argument("--sigma", type=float, default=1.0)
     parser.add_argument("--feature-correlation", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--iteration-start", type=int, default=0)
     parser.add_argument("--design-seed", type=int)
     parser.add_argument(
         "--fixed-auxiliary-u",
@@ -286,6 +287,7 @@ def main(argv=None):
         selection_events=args.selection_events,
         alpha_levels=args.alpha_levels,
         seed=args.seed,
+        iteration_start=args.iteration_start,
         design_seed=args.design_seed,
         fixed_auxiliary_u=args.fixed_auxiliary_u,
         selection_decimals=args.selection_decimals,

@@ -173,7 +173,7 @@ def test_calibration_summary_reports_failure_bounds():
     ("events", "levels", "error"),
     [
         ("exact_set", (0.05,), TypeError),
-        (("exact_set",), (0.05,), ValueError),
+        ((), (0.05,), ValueError),
         (("exact_set", "exact_set"), (0.05,), ValueError),
         (("exact_set", "same_target"), 0.05, TypeError),
         (("exact_set", "same_target"), (0.0,), ValueError),
