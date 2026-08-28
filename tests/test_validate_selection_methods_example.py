@@ -163,6 +163,10 @@ def test_validation_cli_accepts_shared_design_and_rf_worker_limits():
             "0.5",
             "--signal-positions",
             "first",
+            "--selection-events",
+            "feature_inclusion",
+            "exact_set",
+            "same_target",
         ]
     )
 
@@ -171,3 +175,22 @@ def test_validation_cli_accepts_shared_design_and_rf_worker_limits():
     assert args.auxiliary_values == [None, 0.75]
     assert args.signal_strengths == [0.5]
     assert args.signal_positions == ["first"]
+    assert args.selection_events == [
+        "feature_inclusion",
+        "exact_set",
+        "same_target",
+    ]
+
+
+def test_validation_cli_accepts_exact_set_only():
+    args = validation.parse_args(
+        [
+            "--selection-events",
+            "exact_set",
+            "--primary-selection-event",
+            "exact_set",
+        ]
+    )
+
+    assert args.selection_events == ["exact_set"]
+    assert args.primary_selection_event == "exact_set"
