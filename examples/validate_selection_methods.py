@@ -43,7 +43,12 @@ from si_shap import (
 
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "selection_method_validation"
-METHODS = ("shap", "mutual_information", "marginal_screening")
+METHODS = (
+    "shap",
+    "mutual_information",
+    "marginal_screening",
+    "spline_screening",
+)
 DESIGNS = {
     "baseline": {
         "n_samples": 100,

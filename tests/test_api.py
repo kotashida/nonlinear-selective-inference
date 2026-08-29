@@ -213,7 +213,8 @@ def test_default_api_uses_same_target_and_generic_result_names(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "selection_method", ["mutual_information", "marginal_screening"]
+    "selection_method",
+    ["mutual_information", "marginal_screening", "spline_screening"],
 )
 def test_public_api_accepts_non_shap_builtin_methods(monkeypatch, selection_method):
     monkeypatch.setattr(

@@ -1,6 +1,6 @@
 # Selective Inference After Feature Selection
 
-This project performs selective inference after deterministic top-$k$ feature selection. It includes Random Forest Tree SHAP, mutual-information screening, and marginal-correlation screening; chi tests for B-spline effects; finite-sample-valid conditional Monte Carlo rank $p$ values; explicitly exploratory Adaptive Importance Sampling (AIS); and selection-region visualization.
+This project performs selective inference after deterministic top-$k$ feature selection. It includes Random Forest Tree SHAP, mutual-information screening, marginal-correlation screening, and cubic B-spline screening; chi tests for B-spline effects; finite-sample-valid conditional Monte Carlo rank $p$ values; explicitly exploratory Adaptive Importance Sampling (AIS); and selection-region visualization.
 
 ## Real-data API and statistical scope
 
@@ -16,7 +16,7 @@ result = selective_inference(
     X,
     y,
     k_select=2,
-    selection_method="shap",  # or "mutual_information" / "marginal_screening"
+    selection_method="shap",  # also mutual_information / marginal_screening / spline_screening
     estimator=RandomForestRegressor(
         n_estimators=100, max_depth=5, random_state=42
     ),

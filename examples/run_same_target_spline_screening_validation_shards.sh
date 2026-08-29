@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run the baseline validation for Mutual Information and Marginal Correlation
-# with same_target as the only conditioning event.  Each Python process is
-# single-threaded, so PARALLEL_SHARDS is also the maximum CPU-core usage.
+# Reproduce the baseline / fresh auxiliary / same_target validation slice used
+# in selection_method_validation_combined_analysis, for spline screening only.
+# Spline screening is single-threaded, so PARALLEL_SHARDS is the CPU-core cap.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -27,9 +27,9 @@ if [[ ! -x "$PYTHON_BIN" ]] && ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
 fi
 export PYTHON_BIN
 
-export OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_method_validation_same_target_mi_mc_shards}"
+export OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_method_validation_same_target_spline_screening_shards}"
 export PRESET="comprehensive"
-export METHODS="mutual_information marginal_screening"
+export METHODS="spline_screening"
 export DESIGNS="baseline"
 export AUXILIARY_VALUES="fresh"
 export SIGNAL_STRENGTHS="0.30 0.50 0.75 1.00"
@@ -48,19 +48,20 @@ if ! [[ "$CPU_BUDGET" =~ ^[1-9][0-9]*$ ]] || (( CPU_BUDGET > 32 )); then
   echo "CPU_BUDGET must be an integer from 1 to 32." >&2
   exit 2
 fi
-if ! [[ "$PARALLEL_SHARDS" =~ ^[1-9][0-9]*$ ]] || (( PARALLEL_SHARDS > 32 )); then
-  echo "PARALLEL_SHARDS must be an integer from 1 to 32." >&2
+if ! [[ "$PARALLEL_SHARDS" =~ ^[1-9][0-9]*$ ]] || (( PARALLEL_SHARDS > CPU_BUDGET )); then
+  echo "PARALLEL_SHARDS must be an integer from 1 to CPU_BUDGET." >&2
   exit 2
 fi
 
-export BASE_SEED="${BASE_SEED:-20260829}"
+# A new method-specific simulation seed keeps runs independent. DESIGN_SEED is
+# identical to the existing combined analysis and reproduces its fixed design.
+export BASE_SEED="${BASE_SEED:-20260830}"
 export DESIGN_SEED="${DESIGN_SEED:-314159}"
 export MC_PROPOSALS="${MC_PROPOSALS:-800}"
 export MIN_CALIBRATION_ITERS="${MIN_CALIBRATION_ITERS:-5000}"
 export MIN_SIGNAL_TARGETS="${MIN_SIGNAL_TARGETS:-300}"
 export MIN_CONDITIONAL_POWER="${MIN_CONDITIONAL_POWER:-0.80}"
 
-# These are also set inside every Python entry point before NumPy is imported.
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1

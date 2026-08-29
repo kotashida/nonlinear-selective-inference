@@ -220,8 +220,13 @@ def test_example_writes_calibration_bundle(tmp_path):
     assert expected.issubset(path.name for path in tmp_path.iterdir())
 
 
-def test_null_cli_accepts_three_builtin_selection_methods():
-    for method in ("shap", "mutual_information", "marginal_screening"):
+def test_null_cli_accepts_builtin_selection_methods():
+    for method in (
+        "shap",
+        "mutual_information",
+        "marginal_screening",
+        "spline_screening",
+    ):
         parsed = example.parse_args(["--selection-method", method])
         assert parsed.selection_method == method
 

@@ -16,6 +16,7 @@ from si_shap.selection import (
     MarginalCorrelationSelector,
     MutualInformationSelector,
     RF_PARAMS,
+    SplineScreeningSelector,
     _resolve_rf_params,
     _top_k,
     ShapSelector,
@@ -176,6 +177,7 @@ def test_shap_selector_explicitly_rejects_multioutput_shap_values():
         ("shap", ShapSelector),
         ("mutual_information", MutualInformationSelector),
         ("marginal_screening", MarginalCorrelationSelector),
+        ("spline_screening", SplineScreeningSelector),
     ],
 )
 def test_make_selector_resolves_three_builtin_methods(method, expected_type):
@@ -195,7 +197,12 @@ def test_make_selector_rejects_unknown_or_conflicting_methods():
 
 
 @pytest.mark.parametrize(
-    "selector", [MutualInformationSelector(), MarginalCorrelationSelector()]
+    "selector",
+    [
+        MutualInformationSelector(),
+        MarginalCorrelationSelector(),
+        SplineScreeningSelector(),
+    ],
 )
 def test_non_shap_builtin_selectors_are_deterministic(selector):
     rng = np.random.default_rng(31)
@@ -217,3 +224,24 @@ def test_marginal_selector_handles_constant_columns_deterministically():
 
     np.testing.assert_array_equal(result.selected_features, [1, 2])
     assert result.scores[0] == 0.0
+
+
+def test_spline_screening_matches_projection_norm_and_handles_constants():
+    rng = np.random.default_rng(37)
+    X = np.column_stack(
+        (
+            np.ones(40),
+            np.linspace(-2.0, 2.0, 40),
+            rng.normal(size=40),
+        )
+    )
+    y = np.square(X[:, 1]) + 0.05 * rng.normal(size=40)
+    selector = SplineScreeningSelector()
+
+    result = selector.select(X, y, 1)
+
+    assert result.scores[0] == 0.0
+    assert result.selected_features.tolist() == [1]
+    first_bases = selector._cached_bases
+    selector.select(X, -y, 1)
+    assert selector._cached_bases is first_bases

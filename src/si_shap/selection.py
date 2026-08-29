@@ -20,6 +20,8 @@ from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import mutual_info_regression
 
+from .inference import _spline_effect_basis
+
 
 MAX_CPU_CORES = 32
 RF_PARAMS = {
@@ -360,10 +362,67 @@ class MarginalCorrelationSelector:
         }
 
 
+class SplineScreeningSelector:
+    """Top-k nonlinear screening by cubic B-spline projection norm.
+
+    The score for feature ``j`` is ``||Q_j.T @ response||_2``, where ``Q_j``
+    is the orthonormal centered spline basis used by the downstream chi test.
+    Bases are cached for the most recently seen design because conditional
+    Monte Carlo repeatedly evaluates the selector with one fixed ``X``.
+    """
+
+    def __init__(self):
+        self._cached_X = None
+        self._cached_bases = None
+
+    def _bases(self, X: np.ndarray) -> tuple[np.ndarray | None, ...]:
+        if self._cached_X is X and self._cached_bases is not None:
+            return self._cached_bases
+        bases = []
+        for feature in range(X.shape[1]):
+            column = X[:, feature]
+            if np.ptp(column) <= np.finfo(float).eps:
+                bases.append(None)
+            else:
+                bases.append(_spline_effect_basis(column))
+        self._cached_X = X
+        self._cached_bases = tuple(bases)
+        return self._cached_bases
+
+    def select(self, X, response, k_select) -> SelectionResult:
+        X = np.asarray(X, dtype=float)
+        response = np.asarray(response, dtype=float)
+        if X.ndim != 2 or response.ndim != 1 or X.shape[0] != response.size:
+            raise ValueError("X must be two-dimensional and match the response.")
+        if not np.all(np.isfinite(X)) or not np.all(np.isfinite(response)):
+            raise ValueError("X and response must contain only finite values.")
+        scores = np.array(
+            [
+                0.0 if basis is None else np.linalg.norm(basis.T @ response)
+                for basis in self._bases(X)
+            ],
+            dtype=float,
+        )
+        selected = _top_k(scores, k_select)
+        ranking = _top_k(scores, X.shape[1])
+        return SelectionResult(selected, scores, ranking)
+
+    def get_settings(self) -> Mapping[str, Any]:
+        return {
+            "selector": type(self).__name__,
+            "selection_method": "spline_screening",
+            "importance": "centered_cubic_bspline_projection_norm",
+            "spline_df": 3,
+            "spline_degree": 3,
+            "tie_breaking": "decreasing_importance_then_increasing_feature_index",
+        }
+
+
 _BUILTIN_SELECTOR_TYPES = (
     ShapSelector,
     MutualInformationSelector,
     MarginalCorrelationSelector,
+    SplineScreeningSelector,
 )
 
 
@@ -405,7 +464,7 @@ def make_selector(
     """Resolve a built-in or custom selector.
 
     The built-in methods are ``shap`` (the backward-compatible default),
-    ``mutual_information``, and ``marginal_screening``.
+    ``mutual_information``, ``marginal_screening``, and ``spline_screening``.
     """
     supplied = sum(value is not None for value in (estimator, selector, rf_params))
     if supplied > 1:
@@ -417,10 +476,15 @@ def make_selector(
     if selection_method is not None and not isinstance(selection_method, str):
         raise TypeError("selection_method must be a string or None.")
     method = "shap" if selection_method is None else selection_method
-    if method not in {"shap", "mutual_information", "marginal_screening"}:
+    if method not in {
+        "shap",
+        "mutual_information",
+        "marginal_screening",
+        "spline_screening",
+    }:
         raise ValueError(
             "selection_method must be 'shap', 'mutual_information', or "
-            "'marginal_screening'."
+            "'marginal_screening', or 'spline_screening'."
         )
     if method != "shap" and (estimator is not None or rf_params is not None):
         raise ValueError("estimator and rf_params are available only for SHAP selection.")
@@ -428,6 +492,8 @@ def make_selector(
         return MutualInformationSelector()
     if method == "marginal_screening":
         return MarginalCorrelationSelector()
+    if method == "spline_screening":
+        return SplineScreeningSelector()
     if rf_params is not None:
         estimator = RandomForestRegressor(**_resolve_rf_params(rf_params))
     return ShapSelector(estimator, selection_decimals=selection_decimals)
