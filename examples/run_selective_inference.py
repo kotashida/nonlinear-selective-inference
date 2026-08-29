@@ -59,7 +59,12 @@ def parse_args(argv=None):
     parser.add_argument("--selection-decimals", type=int, default=10)
     parser.add_argument(
         "--selection-method",
-        choices=("shap", "mutual_information", "marginal_screening"),
+        choices=(
+            "shap",
+            "mutual_information",
+            "marginal_screening",
+            "spline_screening",
+        ),
         default="shap",
     )
     parser.add_argument(
