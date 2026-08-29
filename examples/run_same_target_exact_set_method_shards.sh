@@ -9,7 +9,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/same_target_vs_exact_set_method_shards}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/same_target_vs_exact_set}"
 METHODS="${METHODS:-shap mutual_information}"
 TOTAL_ITERS="${TOTAL_ITERS:-1000}"
 N_SHARDS="${N_SHARDS:-10}"
