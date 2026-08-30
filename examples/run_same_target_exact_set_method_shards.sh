@@ -2,15 +2,15 @@
 set -euo pipefail
 
 # Reproduce the slide's paired same_target versus exact_set experiment with
-# Random Forest + SHAP and mutual-information selection. Methods and null/power
-# phases run sequentially, while each phase is split into 10 parallel shards.
+# any supported built-in selector. Methods and null/power phases run
+# sequentially, while each phase is split into 10 parallel shards.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/same_target_vs_exact_set}"
-METHODS="${METHODS:-shap mutual_information}"
+METHODS="${METHODS:-shap spline_screening marginal_screening}"
 TOTAL_ITERS="${TOTAL_ITERS:-1000}"
 N_SHARDS="${N_SHARDS:-10}"
 PARALLEL_SHARDS="${PARALLEL_SHARDS:-10}"
@@ -18,8 +18,9 @@ CPU_BUDGET="${CPU_BUDGET:-32}"
 RF_JOBS="${RF_JOBS:-3}"
 BASE_SEED="${BASE_SEED:-20260828}"
 DESIGN_SEED="${DESIGN_SEED:-144269559}"
+K_SELECT="${K_SELECT:-5}"
 
-for name in TOTAL_ITERS N_SHARDS PARALLEL_SHARDS CPU_BUDGET RF_JOBS; do
+for name in TOTAL_ITERS N_SHARDS PARALLEL_SHARDS CPU_BUDGET RF_JOBS K_SELECT; do
   value="${!name}"
   if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
     echo "$name must be a positive integer" >&2
@@ -39,7 +40,8 @@ if (( PARALLEL_SHARDS * RF_JOBS > CPU_BUDGET )); then
   exit 2
 fi
 for method in $METHODS; do
-  if [[ "$method" != "shap" && "$method" != "mutual_information" ]]; then
+  if [[ "$method" != "shap" && "$method" != "mutual_information" && \
+        "$method" != "marginal_screening" && "$method" != "spline_screening" ]]; then
     echo "Unsupported method in METHODS: $method" >&2
     exit 2
   fi
@@ -57,7 +59,7 @@ trap 'rm -f "$requested_config"' EXIT
   printf 'RF_JOBS=%s\n' "$RF_JOBS"
   printf 'BASE_SEED=%s\n' "$BASE_SEED"
   printf 'DESIGN_SEED=%s\n' "$DESIGN_SEED"
-  printf 'N_SAMPLES=100\nN_FEATURES=20\nK_SELECT=5\n'
+  printf 'N_SAMPLES=100\nN_FEATURES=20\nK_SELECT=%s\n' "$K_SELECT"
   printf 'SIGNAL_STRENGTH=0.2\nALPHA=0.05\n'
   printf 'MC_PROPOSALS=800\n'
 } >"$requested_config"
@@ -94,12 +96,27 @@ run_shard() {
     selection_args+=(--rf-param "n_jobs=${RF_JOBS}")
   fi
   mkdir -p "$shard_dir"
+
+  if [[ "$experiment" == "null" && \
+        -s "$shard_dir/settings.json" && \
+        -s "$shard_dir/p_value_results.csv" ]]; then
+    echo "Skipping completed ${method} ${experiment} shard ${shard}"
+    return
+  fi
+  if [[ "$experiment" == "power" && \
+        -s "$shard_dir/settings.json" && \
+        -s "$shard_dir/target_results.csv" && \
+        -s "$shard_dir/feature_results.csv" ]]; then
+    echo "Skipping completed ${method} ${experiment} shard ${shard}"
+    return
+  fi
+
   echo "Starting ${method} ${experiment} shard ${shard}: start=${start}, count=${count}"
 
   if [[ "$experiment" == "null" ]]; then
     "$PYTHON_BIN" -u examples/compare_selection_event_null_calibration.py \
       --n-iters "$count" --iteration-start "$start" \
-      --n-samples 100 --n-features 20 --k-select 5 \
+      --n-samples 100 --n-features 20 --k-select "$K_SELECT" \
       --sigma 1.0 --feature-correlation 0.0 \
       --seed "$BASE_SEED" --design-seed "$DESIGN_SEED" \
       --selection-events same_target exact_set \
@@ -112,7 +129,7 @@ run_shard() {
   else
     "$PYTHON_BIN" -u examples/compare_selection_event_power.py \
       --preset quick --n-iters "$count" --iteration-start "$start" \
-      --n-samples 100 --n-features 20 --k-select 5 \
+      --n-samples 100 --n-features 20 --k-select "$K_SELECT" \
       --signal-features 0 --feature-correlation 0.0 --signal-strength 0.2 \
       --alpha 0.05 --seed "$BASE_SEED" --selection-decimals 10 \
       "${selection_args[@]}" \
@@ -126,7 +143,7 @@ run_shard() {
 }
 
 export -f run_shard
-export PYTHON_BIN OUTPUT_ROOT TOTAL_ITERS N_SHARDS BASE_SEED DESIGN_SEED RF_JOBS
+export PYTHON_BIN OUTPUT_ROOT TOTAL_ITERS N_SHARDS BASE_SEED DESIGN_SEED RF_JOBS K_SELECT
 
 for method in $METHODS; do
   echo "Running ${method} null phase with ${PARALLEL_SHARDS} shards"

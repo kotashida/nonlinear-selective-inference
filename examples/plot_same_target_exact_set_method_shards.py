@@ -31,7 +31,8 @@ EVENT_COLORS = {"same_target": "#2878B5", "exact_set": "#59A14F"}
 METHOD_LABELS = {
     "shap": "SHAP",
     "mutual_information": "Mutual information",
-    "marginal_screening": "Marginal screening",
+    "spline_screening": "Spline",
+    "marginal_screening": "Corr",
 }
 
 

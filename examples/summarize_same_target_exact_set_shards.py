@@ -41,7 +41,12 @@ def parse_args(argv=None):
     parser.add_argument("--expected-iterations", type=int, default=1000)
     parser.add_argument(
         "--expected-method",
-        choices=("shap", "mutual_information", "marginal_screening"),
+        choices=(
+            "shap",
+            "mutual_information",
+            "marginal_screening",
+            "spline_screening",
+        ),
         required=True,
     )
     parser.add_argument("--output-dir", type=Path)
