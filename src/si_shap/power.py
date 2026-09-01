@@ -366,10 +366,10 @@ def compare_selection_event_power(
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
     if (
         selection_method is not None
-        and selection_method != "shap"
+        and selection_method not in {"shap", "lime"}
         and rf_params is not None
     ):
-        raise ValueError("rf_params are available only for SHAP selection.")
+        raise ValueError("rf_params are available only for SHAP or LIME selection.")
     seed = _validate_seed("seed", seed)
     if (
         isinstance(iteration_start, (bool, np.bool_))
@@ -380,8 +380,18 @@ def compare_selection_event_power(
         raise ValueError("iteration_start must be nonnegative.")
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
-    if inference_method not in {"conditional_mc", "ais"}:
-        raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
+    if inference_method not in {"conditional_mc", "ais", "exact_spline"}:
+        raise ValueError(
+            "inference_method must be 'conditional_mc', 'ais', or 'exact_spline'."
+        )
+    if inference_method == "exact_spline" and (
+        selection_method != "spline_screening"
+        or tuple(selection_events) != ("exact_set",)
+    ):
+        raise ValueError(
+            "exact_spline requires selection_method='spline_screening' and "
+            "selection_events=('exact_set',)."
+        )
     if inference_method == "conditional_mc" and stop_when_ess_met:
         raise ValueError("stop_when_ess_met requires inference_method='ais'.")
     if inference_method == "ais" and (
@@ -395,7 +405,7 @@ def compare_selection_event_power(
 
     resolved_rf_params = (
         _resolve_rf_params(rf_params)
-        if (selection_method is None or selection_method == "shap")
+        if (selection_method is None or selection_method in {"shap", "lime"})
         and estimator is None
         and selector is None
         else None

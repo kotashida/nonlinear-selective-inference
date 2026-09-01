@@ -1,6 +1,6 @@
 """Consolidate completed same-target versus exact-set experiment outputs.
 
-This migration combines the completed 1,000-iteration SHAP, mutual-information,
+This migration combines the completed 1,000-iteration SHAP, spline-screening,
 and marginal-screening results into one normalized directory. It deliberately
 does not delete legacy inputs; removal is a separate, explicit filesystem step.
 """
@@ -22,7 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from examples import plot_same_target_exact_set_method_shards as plots
 
 
-METHODS = ("shap", "mutual_information", "marginal_screening")
+METHODS = ("shap", "spline_screening", "marginal_screening")
 EVENTS = ("same_target", "exact_set")
 
 
@@ -85,6 +85,8 @@ def _copy_sharded_method(source_root: Path, output_root: Path, method: str):
     )
     shutil.copy2(source / "pooled_metadata.json", destination / "pooled_metadata.json")
     fixed_design = source_root / method / "shard_0" / "null" / "fixed_design.npy"
+    if not fixed_design.is_file():
+        fixed_design = source / "pooled_null" / "fixed_design.npy"
     if fixed_design.is_file():
         shutil.copy2(fixed_design, destination / "pooled_null" / "fixed_design.npy")
 
@@ -157,10 +159,11 @@ def main(argv=None):
     if output_root.exists() and any(output_root.iterdir()):
         raise FileExistsError(f"Refusing to overwrite non-empty output directory: {output_root}")
 
-    sharded_source = outputs_dir / "same_target_vs_exact_set_method_shards"
-    for method in METHODS[:2]:
-        _copy_sharded_method(sharded_source, output_root, method)
-    _copy_marginal_method(outputs_dir, output_root)
+    existing_source = outputs_dir / "same_target_vs_exact_set"
+    _copy_sharded_method(existing_source, output_root, "shap")
+    spline_source = outputs_dir / "same_target_vs_exact_set_spline_screening_shards"
+    _copy_sharded_method(spline_source, output_root, "spline_screening")
+    _copy_sharded_method(existing_source, output_root, "marginal_screening")
     summary, paired = _unified_tables(output_root)
 
     analysis_dir = output_root / "pooled_summary" / "analysis_plots"
@@ -184,10 +187,8 @@ def main(argv=None):
         "selection_events": list(EVENTS),
         "n_iterations_per_experiment": 1000,
         "retained_legacy_sources": [
-            "same_target_vs_exact_set_method_shards (pooled SHAP and mutual-information results)",
-            "same_target_vs_exact_set_marginal_null",
-            "same_target_vs_exact_set_marginal_power",
-            "same_target_vs_exact_set_marginal_summary",
+            "same_target_vs_exact_set (pooled SHAP and marginal-screening results)",
+            "same_target_vs_exact_set_spline_screening_shards (pooled spline-screening result)",
         ],
         "excluded_obsolete_sources": {
             "same_target_vs_exact_set_mutual_information_benchmark": "one-iteration benchmark",

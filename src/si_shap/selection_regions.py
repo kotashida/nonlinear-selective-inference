@@ -279,13 +279,13 @@ def compute_selection_regions(
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
     if (
         selection_method is not None
-        and selection_method != "shap"
+        and selection_method not in {"shap", "lime"}
         and rf_params is not None
     ):
-        raise ValueError("rf_params are available only for SHAP selection.")
+        raise ValueError("rf_params are available only for SHAP or LIME selection.")
     resolved_rf_params = (
         _resolve_rf_params(rf_params)
-        if (selection_method is None or selection_method == "shap")
+        if (selection_method is None or selection_method in {"shap", "lime"})
         else None
     )
     resolved_selector = None

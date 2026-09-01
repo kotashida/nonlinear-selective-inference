@@ -20,11 +20,15 @@ from .inference import (
     _chi_statistic,
     _run_ais,
     _run_conditional_mc,
+    _run_exact_spline,
     _spline_effect_basis,
+    _spline_exact_set_intervals,
 )
 from .selection import (
     SelectionResult,
     _BUILTIN_SELECTOR_TYPES,
+    _MemoizedSelector,
+    SplineScreeningSelector,
     _validate_selection_event,
     _validate_target_rule,
     make_selector,
@@ -169,8 +173,9 @@ def selective_inference(
     reproduction of that complete selector-to-target algorithm's output.
     Explicitly setting another selection event retains the legacy
     ``all_selected`` target rule unless ``target_rule`` is also supplied.
-    ``selection_method`` selects one of ``shap``, ``mutual_information``, or
-    ``marginal_screening``; a custom ``selector`` may be supplied instead.
+    ``selection_method`` selects one of ``shap``, ``lime``,
+    ``mutual_information``, ``marginal_screening``, or ``spline_screening``;
+    a custom ``selector`` may be supplied instead.
     ``sigma`` must be externally supplied and known under the stated model.
     The default ``conditional_mc`` method returns a finite-sample-valid,
     conservative conditional Monte Carlo rank p-value. ``inference_method='ais'``
@@ -196,8 +201,10 @@ def selective_inference(
         raise ValueError("same_target requires target_rule='uniform_from_selected'.")
     if multiplicity not in {"none", "bonferroni", "holm"}:
         raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
-    if inference_method not in {"conditional_mc", "ais"}:
-        raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
+    if inference_method not in {"conditional_mc", "ais", "exact_spline"}:
+        raise ValueError(
+            "inference_method must be 'conditional_mc', 'ais', or 'exact_spline'."
+        )
     if (
         selection_event == "feature_inclusion"
         and multiplicity == "holm"
@@ -264,6 +271,17 @@ def selective_inference(
         selector=selector,
         selection_decimals=selection_decimals,
     )
+    base_selector = resolved_selector
+    while isinstance(base_selector, _MemoizedSelector):
+        base_selector = base_selector.selector
+    if inference_method == "exact_spline" and (
+        selection_event != "exact_set"
+        or not isinstance(base_selector, SplineScreeningSelector)
+    ):
+        raise ValueError(
+            "exact_spline requires SplineScreeningSelector and "
+            "selection_event='exact_set'."
+        )
     check_repeated_calls = verify_selector_determinism and not isinstance(
         resolved_selector, _BUILTIN_SELECTOR_TYPES
     )
@@ -337,7 +355,7 @@ def selective_inference(
     importance_table["shap_rank"] = importance_table["selection_rank"]
     importance_table["selection_event"] = selection_event
 
-    if selection_event == "exact_set":
+    if selection_event == "exact_set" and inference_method != "exact_spline":
         message = (
             "Exact-set conditioning can make the event rare. Conditional Monte "
             "Carlo remains finite-sample valid but can be conservative when few "
@@ -391,7 +409,22 @@ def selective_inference(
                 f"feature {feature}."
             )
         feature_rng = np.random.default_rng(feature_seeds[test_index])
-        if inference_method == "conditional_mc":
+        if inference_method == "exact_spline":
+            intervals = _spline_exact_set_intervals(
+                base_selector._bases(X),
+                orthogonal,
+                direction,
+                sigma,
+                observed_selected,
+            )
+            if not any(lower <= t_obs <= upper for lower, upper in intervals):
+                raise RuntimeError(
+                    "The analytic spline selection region did not contain T_obs."
+                )
+            p_value, diagnostics = _run_exact_spline(
+                t_obs, test_rank, intervals
+            )
+        elif inference_method == "conditional_mc":
             p_value, diagnostics = _run_conditional_mc(
                 t_obs,
                 test_rank,

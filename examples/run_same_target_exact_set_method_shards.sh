@@ -40,7 +40,8 @@ if (( PARALLEL_SHARDS * RF_JOBS > CPU_BUDGET )); then
   exit 2
 fi
 for method in $METHODS; do
-  if [[ "$method" != "shap" && "$method" != "mutual_information" && \
+  if [[ "$method" != "shap" && "$method" != "lime" && \
+        "$method" != "mutual_information" && \
         "$method" != "marginal_screening" && "$method" != "spline_screening" ]]; then
     echo "Unsupported method in METHODS: $method" >&2
     exit 2
@@ -92,7 +93,7 @@ run_shard() {
   local shard_dir="$OUTPUT_ROOT/${method}/shard_${shard}/${experiment}"
   local log_path="$OUTPUT_ROOT/logs/${method}_${experiment}_shard_${shard}.log"
   local selection_args=(--selection-method "$method")
-  if [[ "$method" == "shap" ]]; then
+  if [[ "$method" == "shap" || "$method" == "lime" ]]; then
     selection_args+=(--rf-param "n_jobs=${RF_JOBS}")
   fi
   mkdir -p "$shard_dir"

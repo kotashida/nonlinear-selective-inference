@@ -286,10 +286,10 @@ def run_simulation(
         raise ValueError("Pass only one of rf_params, estimator, or selector.")
     if (
         selection_method is not None
-        and selection_method != "shap"
+        and selection_method not in {"shap", "lime"}
         and rf_params is not None
     ):
-        raise ValueError("rf_params are available only for SHAP selection.")
+        raise ValueError("rf_params are available only for SHAP or LIME selection.")
     seed = _validate_seed("seed", seed)
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
@@ -322,7 +322,7 @@ def run_simulation(
         )
     resolved_rf_params = (
         _resolve_rf_params(rf_params)
-        if (selection_method is None or selection_method == "shap")
+        if (selection_method is None or selection_method in {"shap", "lime"})
         and estimator is None
         and selector is None
         else None
@@ -335,6 +335,7 @@ def run_simulation(
         rf_params=resolved_rf_params,
     )
     selector_display = {
+        "lime": "LIME",
         "mutual_information": "Mutual information",
         "marginal_screening": "Marginal screening",
     }.get(selection_method, "SHAP")

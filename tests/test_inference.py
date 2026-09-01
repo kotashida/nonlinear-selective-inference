@@ -16,9 +16,51 @@ from si_shap.inference import (
     _effective_sample_size,
     _run_ais,
     _run_conditional_mc,
+    _run_exact_spline,
     _spline_effect_basis,
+    _spline_exact_set_intervals,
     _truncated_normal_logpdf,
 )
+
+
+def test_exact_spline_intervals_match_direct_score_comparison():
+    rng = np.random.default_rng(18)
+    bases = []
+    for _ in range(4):
+        raw = rng.normal(size=(12, 3))
+        bases.append(np.linalg.qr(raw)[0][:, :3])
+    orthogonal = rng.normal(size=12)
+    direction = rng.normal(size=12)
+    direction /= np.linalg.norm(direction)
+    selected = (0, 2)
+    intervals = _spline_exact_set_intervals(
+        bases, orthogonal, direction, 1.0, selected
+    )
+
+    for z_value in np.linspace(0.013, 8.0, 401):
+        response = orthogonal + direction * z_value
+        scores = np.array([np.linalg.norm(basis.T @ response) for basis in bases])
+        direct = frozenset(np.lexsort((np.arange(4), -scores))[:2]) == frozenset(
+            selected
+        )
+        analytic = any(lower <= z_value <= upper for lower, upper in intervals)
+        assert analytic == direct
+
+
+def test_exact_spline_p_value_uses_truncated_chi_mass():
+    p_value, diagnostics = _run_exact_spline(2.0, 3, ((1.0, 3.0), (4.0, np.inf)))
+    denominator = (
+        stats.chi.cdf(3.0, df=3)
+        - stats.chi.cdf(1.0, df=3)
+        + stats.chi.sf(4.0, df=3)
+    )
+    numerator = (
+        stats.chi.cdf(3.0, df=3)
+        - stats.chi.cdf(2.0, df=3)
+        + stats.chi.sf(4.0, df=3)
+    )
+    np.testing.assert_allclose(p_value, numerator / denominator)
+    assert diagnostics["sampling_mode"] == "exact_truncated_chi"
 
 
 def test_conditional_mc_matches_its_exact_rank_construction():

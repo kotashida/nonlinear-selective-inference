@@ -45,6 +45,7 @@ def test_example_defaults_to_repository_outputs_folder():
 def test_power_cli_accepts_builtin_selection_methods():
     for method in (
         "shap",
+        "lime",
         "mutual_information",
         "marginal_screening",
         "spline_screening",

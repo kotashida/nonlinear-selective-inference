@@ -39,6 +39,7 @@ os.environ["POLARS_MAX_THREADS"] = "1"
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.ticker import FormatStrFormatter
 from scipy import stats
 
 from si_shap.selection import target_from_selected_set
@@ -390,18 +391,23 @@ def _plot_rejection_rates(result, output_path):
         expected = plot_summary[f"expected_rejection_rate_{label}"].to_numpy(
             dtype=float
         )
+        upper_limit = 1.12 * max(alpha, rates.max(), expected.max())
         positions = np.arange(len(plot_methods))
         axis.scatter(positions, rates, label="Observed", zorder=3)
         axis.scatter(positions, expected, marker="x", label="Expected", zorder=3)
         axis.axhline(alpha, color="black", linestyle="--", label="Nominal")
         axis.set_xticks(positions, plot_methods, rotation=20, ha="right")
-        axis.set(
-            title=(
-                f"alpha = {alpha:g}, large-set k = "
-                f"{result['settings']['large_set_size']}"
-            ),
-            ylabel="Null rejection rate",
+        panel_title = (
+            "Null Rejection Rates under Variable-Size Selection"
+            if np.isclose(alpha, 0.05)
+            else f"alpha = {alpha:g}"
         )
+        axis.set(
+            title=panel_title,
+            ylabel="Null rejection rate",
+            ylim=(0.0, upper_limit),
+        )
+        axis.yaxis.set_major_formatter(FormatStrFormatter("%.4f"))
         axis.legend()
     figure.tight_layout()
     figure.savefig(output_path, dpi=180)

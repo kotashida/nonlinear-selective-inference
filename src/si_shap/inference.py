@@ -65,6 +65,165 @@ def _chi_statistic(response, basis, sigma=1.0):
     return statistic, projected
 
 
+def _quadratic_nonnegative_intervals(coefficients, *, lower=0.0):
+    """Return intervals where every supplied quadratic is nonnegative."""
+    coefficients = np.asarray(coefficients, dtype=float)
+    if coefficients.ndim != 2 or coefficients.shape[1] != 3:
+        raise ValueError("coefficients must have shape (n_inequalities, 3).")
+    if not np.all(np.isfinite(coefficients)) or not np.isfinite(lower):
+        raise ValueError("coefficients and lower must be finite.")
+
+    roots = []
+    for quadratic, linear, constant in coefficients:
+        scale = max(1.0, abs(quadratic), abs(linear), abs(constant))
+        tolerance = 64.0 * np.finfo(float).eps * scale
+        if abs(quadratic) <= tolerance:
+            if abs(linear) > tolerance:
+                root = -constant / linear
+                if root > lower:
+                    roots.append(float(root))
+            continue
+        discriminant = linear * linear - 4.0 * quadratic * constant
+        discriminant_tolerance = 128.0 * np.finfo(float).eps * max(
+            1.0, linear * linear, abs(4.0 * quadratic * constant)
+        )
+        if discriminant < -discriminant_tolerance:
+            continue
+        square_root = np.sqrt(max(0.0, discriminant))
+        q_value = -0.5 * (linear + np.copysign(square_root, linear))
+        if q_value == 0.0:
+            candidate_roots = (-linear / (2.0 * quadratic),)
+        else:
+            candidate_roots = (q_value / quadratic, constant / q_value)
+        roots.extend(float(root) for root in candidate_roots if root > lower)
+
+    roots.sort()
+    unique_roots = []
+    for root in roots:
+        if not unique_roots or not np.isclose(
+            root, unique_roots[-1], rtol=1e-10, atol=1e-12
+        ):
+            unique_roots.append(root)
+
+    boundaries = [float(lower), *unique_roots, np.inf]
+    intervals = []
+    for left, right in zip(boundaries[:-1], boundaries[1:]):
+        midpoint = (
+            0.5 * (left + right)
+            if np.isfinite(right)
+            else left + max(1.0, abs(left))
+        )
+        values = (
+            coefficients[:, 0] * midpoint * midpoint
+            + coefficients[:, 1] * midpoint
+            + coefficients[:, 2]
+        )
+        scales = np.maximum(
+            1.0,
+            np.abs(coefficients[:, 0]) * midpoint * midpoint
+            + np.abs(coefficients[:, 1]) * midpoint
+            + np.abs(coefficients[:, 2]),
+        )
+        if np.all(values >= -256.0 * np.finfo(float).eps * scales):
+            if intervals and np.isclose(
+                intervals[-1][1], left, rtol=1e-10, atol=1e-12
+            ):
+                intervals[-1] = (intervals[-1][0], right)
+            else:
+                intervals.append((left, right))
+    return tuple(intervals)
+
+
+def _spline_exact_set_intervals(bases, orthogonal, direction, sigma, selected):
+    """Compute the exact top-k spline-screening event along a response ray."""
+    orthogonal = np.asarray(orthogonal, dtype=float)
+    direction = np.asarray(direction, dtype=float)
+    selected = tuple(int(feature) for feature in selected)
+    selected_set = set(selected)
+    if len(selected_set) != len(selected):
+        raise ValueError("selected must contain unique feature indices.")
+
+    score_coefficients = []
+    for basis in bases:
+        if basis is None:
+            score_coefficients.append(np.zeros(3, dtype=float))
+            continue
+        offset = np.asarray(basis, dtype=float).T @ orthogonal
+        slope = float(sigma) * (np.asarray(basis, dtype=float).T @ direction)
+        score_coefficients.append(
+            np.array(
+                [
+                    float(slope @ slope),
+                    float(2.0 * (offset @ slope)),
+                    float(offset @ offset),
+                ]
+            )
+        )
+    score_coefficients = np.asarray(score_coefficients)
+    unselected = [
+        feature for feature in range(len(bases)) if feature not in selected_set
+    ]
+    inequalities = [
+        score_coefficients[selected_feature] - score_coefficients[other_feature]
+        for selected_feature in selected
+        for other_feature in unselected
+    ]
+    if not inequalities:
+        return ((0.0, np.inf),)
+    return _quadratic_nonnegative_intervals(inequalities, lower=0.0)
+
+
+def _chi_interval_probability(lower, upper, rank):
+    """Evaluate chi probability on one interval without avoidable cancellation."""
+    lower = max(0.0, float(lower))
+    upper = float(upper)
+    if upper <= lower:
+        return 0.0
+    if np.isposinf(upper):
+        return float(stats.chi.sf(lower, df=rank))
+    median = float(stats.chi.ppf(0.5, df=rank))
+    if lower >= median:
+        probability = stats.chi.sf(lower, df=rank) - stats.chi.sf(upper, df=rank)
+    else:
+        probability = stats.chi.cdf(upper, df=rank) - stats.chi.cdf(lower, df=rank)
+    return float(np.clip(probability, 0.0, 1.0))
+
+
+def _run_exact_spline(t_obs, rank, intervals):
+    """Return the exact truncated-chi p-value for spline exact-set selection."""
+    denominator = sum(
+        _chi_interval_probability(lower, upper, rank)
+        for lower, upper in intervals
+    )
+    numerator = sum(
+        _chi_interval_probability(max(lower, t_obs), upper, rank)
+        for lower, upper in intervals
+        if upper >= t_obs
+    )
+    if not np.isfinite(denominator) or denominator <= 0.0:
+        raise FloatingPointError("The exact spline selection event has zero probability.")
+    p_value = float(np.clip(numerator / denominator, 0.0, 1.0))
+    return p_value, {
+        "status": "ok",
+        "resolution_status": "exact_selection_region",
+        "proposals": 0,
+        "selected_samples": np.nan,
+        "tail_samples": np.nan,
+        "denominator_ess": np.inf,
+        "tail_ess": np.inf,
+        "mc_se": 0.0,
+        "mc_ci_95_lower": p_value,
+        "mc_ci_95_upper": p_value,
+        "tail_probability_mc_ci_95_lower": p_value,
+        "tail_probability_mc_ci_95_upper": p_value,
+        "selection_probability_estimate": float(denominator),
+        "selection_interval_count": len(intervals),
+        "sampling_mode": "exact_truncated_chi",
+        "p_value_method": "exact_spline_selection_region",
+        "finite_sample_valid": True,
+    }
+
+
 def _truncated_normal_logpdf(z, mean, sd):
     z = np.asarray(z)
     return stats.norm.logpdf(z, loc=mean, scale=sd) - stats.norm.logcdf(mean / sd)

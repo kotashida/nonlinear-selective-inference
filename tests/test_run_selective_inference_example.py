@@ -31,8 +31,13 @@ def test_parse_rf_parameter_requires_name_value_syntax():
         raise AssertionError("Expected argparse.ArgumentTypeError")
 
 
-def test_cli_accepts_three_builtin_selection_methods():
-    for method in ("shap", "mutual_information", "marginal_screening"):
+def test_cli_accepts_builtin_selection_methods():
+    for method in (
+        "shap",
+        "lime",
+        "mutual_information",
+        "marginal_screening",
+    ):
         parsed = example.parse_args(["--selection-method", method])
         assert parsed.selection_method == method
 
