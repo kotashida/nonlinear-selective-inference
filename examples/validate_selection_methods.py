@@ -45,6 +45,7 @@ from si_shap import (
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "selection_method_validation"
 METHODS = (
     "shap",
+    "lime",
     "mutual_information",
     "marginal_screening",
     "spline_screening",
@@ -197,7 +198,7 @@ def _load_or_run_null(
         fixed_auxiliary_u=fixed_auxiliary_u,
         seed=seed,
         design_seed=design_seed,
-        rf_params={"n_jobs": rf_jobs} if method == "shap" else None,
+        rf_params={"n_jobs": rf_jobs} if method in {"shap", "lime"} else None,
         inference_method="conditional_mc",
         final_batch_size=min(80, max_final_samples),
         max_final_samples=max_final_samples,
@@ -231,7 +232,7 @@ def _load_or_run_power(
         signal_features=(signal_feature,),
         signal_strength=signal_strength,
         selection_method=method,
-        rf_params={"n_jobs": rf_jobs} if method == "shap" else None,
+        rf_params={"n_jobs": rf_jobs} if method in {"shap", "lime"} else None,
         selection_events=selection_events,
         seed=seed,
         inference_method="conditional_mc",

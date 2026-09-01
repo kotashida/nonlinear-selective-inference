@@ -5,6 +5,7 @@ from .null_calibration import compare_selection_event_null_calibration
 from .plotting import plot_results, plot_selection_regions
 from .power import compare_selection_event_power
 from .selection import (
+    LimeSelector,
     MarginalCorrelationSelector,
     MutualInformationSelector,
     SelectionResult,
@@ -27,6 +28,7 @@ __all__ = [
     "SelectionResult",
     "Selector",
     "ShapSelector",
+    "LimeSelector",
     "MutualInformationSelector",
     "MarginalCorrelationSelector",
     "SplineScreeningSelector",

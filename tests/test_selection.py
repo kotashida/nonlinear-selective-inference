@@ -12,6 +12,7 @@ import pytest
 from sklearn.ensemble import RandomForestRegressor
 
 from si_shap.selection import (
+    LimeSelector,
     MAX_CPU_CORES,
     MarginalCorrelationSelector,
     MutualInformationSelector,
@@ -175,12 +176,13 @@ def test_shap_selector_explicitly_rejects_multioutput_shap_values():
     ("method", "expected_type"),
     [
         ("shap", ShapSelector),
+        ("lime", LimeSelector),
         ("mutual_information", MutualInformationSelector),
         ("marginal_screening", MarginalCorrelationSelector),
         ("spline_screening", SplineScreeningSelector),
     ],
 )
-def test_make_selector_resolves_three_builtin_methods(method, expected_type):
+def test_make_selector_resolves_builtin_methods(method, expected_type):
     assert isinstance(make_selector(selection_method=method), expected_type)
 
 
@@ -199,6 +201,13 @@ def test_make_selector_rejects_unknown_or_conflicting_methods():
 @pytest.mark.parametrize(
     "selector",
     [
+        LimeSelector(
+            RandomForestRegressor(
+                n_estimators=3, max_depth=2, random_state=42, n_jobs=1
+            ),
+            num_samples=24,
+            num_explanations=3,
+        ),
         MutualInformationSelector(),
         MarginalCorrelationSelector(),
         SplineScreeningSelector(),
@@ -224,6 +233,27 @@ def test_marginal_selector_handles_constant_columns_deterministically():
 
     np.testing.assert_array_equal(result.selected_features, [1, 2])
     assert result.scores[0] == 0.0
+
+
+def test_lime_selector_detects_a_dominant_feature_and_reuses_neighborhoods():
+    rng = np.random.default_rng(101)
+    X = rng.normal(size=(50, 4))
+    y = 4.0 * X[:, 2] + 0.05 * rng.normal(size=50)
+    selector = LimeSelector(
+        RandomForestRegressor(
+            n_estimators=20, max_depth=4, random_state=42, n_jobs=1
+        ),
+        num_samples=64,
+        num_explanations=5,
+    )
+
+    first = selector.select(X, y, 1)
+    neighborhoods = selector._cached_neighborhoods
+    second = selector.select(X, y, 1)
+
+    assert first.selected_features.tolist() == [2]
+    assert selector._cached_neighborhoods is neighborhoods
+    np.testing.assert_array_equal(first.scores, second.scores)
 
 
 def test_spline_screening_matches_projection_norm_and_handles_constants():

@@ -402,7 +402,15 @@ def _plot_rejection_rates(result, output_path):
             )
         axis.axhline(alpha, color="black", linestyle="--", label="Nominal")
         axis.set_xticks(positions, [STRATUM_LABELS[stratum] for stratum in STRATA])
-        axis.set(title=f"alpha = {alpha:g}", ylabel="Null rejection rate")
+        panel_title = (
+            "Null Rejection Rates by Auxiliary-Randomness Stratum"
+            if np.isclose(alpha, 0.05)
+            else f"alpha = {alpha:g}"
+        )
+        axis.set(
+            title=panel_title,
+            ylabel="Null rejection rate",
+        )
         axis.legend(fontsize=7, title="dot: observed; x: expected", title_fontsize=7)
     figure.tight_layout()
     figure.savefig(output_path, dpi=180)

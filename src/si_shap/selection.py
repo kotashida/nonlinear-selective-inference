@@ -283,6 +283,175 @@ class ShapSelector:
         }
 
 
+class LimeSelector:
+    """Global feature selection from deterministic tabular LIME explanations.
+
+    A regression model is refitted for every candidate response.  Continuous
+    Gaussian neighborhoods are generated around deterministic, evenly spaced
+    rows of the fixed design, and a distance-weighted ridge surrogate is fit in
+    standardized coordinates at each row.  The feature score is the mean
+    absolute local coefficient across those explanation rows.
+
+    Neighborhoods and weighted-ridge operators depend only on ``X`` and are
+    cached.  This is both faster and, crucially for selective inference, makes
+    the LIME randomization identical for the observed and candidate responses.
+    """
+
+    def __init__(
+        self,
+        estimator=None,
+        *,
+        selection_decimals: int = 10,
+        random_state: int = 42,
+        num_samples: int = 64,
+        num_explanations: int = 10,
+        kernel_width: float | None = None,
+        ridge_alpha: float = 1.0,
+    ):
+        if (
+            isinstance(selection_decimals, (bool, np.bool_))
+            or not isinstance(selection_decimals, (int, np.integer))
+            or selection_decimals < 0
+        ):
+            raise ValueError("selection_decimals must be a nonnegative integer.")
+        if (
+            isinstance(random_state, (bool, np.bool_))
+            or not isinstance(random_state, (int, np.integer))
+            or random_state < 0
+        ):
+            raise ValueError("random_state must be a nonnegative integer.")
+        for name, value, minimum in (
+            ("num_samples", num_samples, 2),
+            ("num_explanations", num_explanations, 1),
+        ):
+            if (
+                isinstance(value, (bool, np.bool_))
+                or not isinstance(value, (int, np.integer))
+                or value < minimum
+            ):
+                raise ValueError(f"{name} must be an integer of at least {minimum}.")
+        if kernel_width is not None and (
+            not np.isscalar(kernel_width)
+            or not np.isfinite(kernel_width)
+            or float(kernel_width) <= 0.0
+        ):
+            raise ValueError("kernel_width must be positive and finite or None.")
+        if (
+            not np.isscalar(ridge_alpha)
+            or not np.isfinite(ridge_alpha)
+            or float(ridge_alpha) < 0.0
+        ):
+            raise ValueError("ridge_alpha must be nonnegative and finite.")
+        if estimator is None:
+            estimator = RandomForestRegressor(**RF_PARAMS)
+        _check_estimator_reproducibility(estimator)
+        estimator_params = estimator.get_params(deep=False)
+        if "n_jobs" in estimator_params:
+            _validate_n_jobs(estimator_params["n_jobs"])
+        self.estimator = clone(estimator)
+        self.selection_decimals = int(selection_decimals)
+        self.random_state = int(random_state)
+        self.num_samples = int(num_samples)
+        self.num_explanations = int(num_explanations)
+        self.kernel_width = (
+            None if kernel_width is None else float(kernel_width)
+        )
+        self.ridge_alpha = float(ridge_alpha)
+        self._cached_X = None
+        self._cached_neighborhoods = None
+        self._cached_operators = None
+        self._cached_anchor_indices = None
+
+    def _prepare_neighborhoods(self, X: np.ndarray) -> None:
+        if self._cached_X is X and self._cached_neighborhoods is not None:
+            return
+        means = X.mean(axis=0)
+        raw_scales = X.std(axis=0)
+        variable = raw_scales > np.finfo(float).eps
+        scales = np.where(variable, raw_scales, 1.0)
+        standardized = (X - means) / scales
+        count = min(self.num_explanations, X.shape[0])
+        anchor_indices = np.linspace(0, X.shape[0] - 1, count, dtype=int)
+        rng = np.random.default_rng(self.random_state)
+        width = (
+            0.75 * np.sqrt(X.shape[1])
+            if self.kernel_width is None
+            else self.kernel_width
+        )
+        neighborhoods = []
+        operators = []
+        penalty = np.eye(X.shape[1] + 1) * self.ridge_alpha
+        penalty[0, 0] = 0.0
+        for anchor_index in anchor_indices:
+            anchor = standardized[anchor_index]
+            local = anchor + rng.normal(
+                size=(self.num_samples, X.shape[1])
+            )
+            local[:, ~variable] = anchor[~variable]
+            local[0] = anchor
+            distances = np.linalg.norm(local - anchor, axis=1)
+            weights = np.exp(-np.square(distances) / np.square(width))
+            design = np.column_stack((np.ones(self.num_samples), local))
+            gram = design.T @ (weights[:, None] * design) + penalty
+            operator = np.linalg.pinv(gram) @ (design.T * weights)
+            neighborhoods.append(means + local * scales)
+            operators.append(operator[1:])
+        self._cached_X = X
+        self._cached_neighborhoods = np.stack(neighborhoods)
+        self._cached_operators = np.stack(operators)
+        self._cached_anchor_indices = anchor_indices
+
+    def select(self, X, response, k_select) -> SelectionResult:
+        X = np.asarray(X, dtype=float)
+        response = np.asarray(response, dtype=float)
+        if X.ndim != 2 or response.ndim != 1 or X.shape[0] != response.size:
+            raise ValueError("X must be two-dimensional and match the response.")
+        if not np.all(np.isfinite(X)) or not np.all(np.isfinite(response)):
+            raise ValueError("X and response must contain only finite values.")
+        if (
+            isinstance(k_select, (bool, np.bool_))
+            or not isinstance(k_select, (int, np.integer))
+            or not 1 <= k_select <= X.shape[1]
+        ):
+            raise ValueError("k_select must satisfy 1 <= k_select <= X.shape[1].")
+        self._prepare_neighborhoods(X)
+        stable_response = np.round(response, decimals=self.selection_decimals)
+        model = clone(self.estimator)
+        model.fit(X, stable_response)
+        flat = self._cached_neighborhoods.reshape(-1, X.shape[1])
+        predictions = np.asarray(model.predict(flat), dtype=float).reshape(
+            self._cached_neighborhoods.shape[:2]
+        )
+        coefficients = np.einsum(
+            "epm,em->ep", self._cached_operators, predictions, optimize=True
+        )
+        scores = np.mean(np.abs(coefficients), axis=0)
+        ranking = _top_k(scores, X.shape[1])
+        return SelectionResult(ranking[:k_select].copy(), scores, ranking)
+
+    def get_settings(self) -> Mapping[str, Any]:
+        return {
+            "selector": type(self).__name__,
+            "selection_method": "lime",
+            "importance": "mean_absolute_standardized_lime_coefficient",
+            "aggregation": "mean_absolute_coefficient_across_explanation_rows",
+            "neighborhood_distribution": "gaussian_centered_at_explanation_row",
+            "anchor_selection": "evenly_spaced_design_rows",
+            "tie_breaking": "decreasing_importance_then_increasing_feature_index",
+            "selection_decimals": self.selection_decimals,
+            "random_state": self.random_state,
+            "num_samples": self.num_samples,
+            "num_explanations": self.num_explanations,
+            "kernel_width": self.kernel_width,
+            "effective_kernel_width_rule": "0.75 * sqrt(n_features)",
+            "ridge_alpha": self.ridge_alpha,
+            "estimator_class": (
+                f"{type(self.estimator).__module__}.{type(self.estimator).__qualname__}"
+            ),
+            "estimator_params": self.estimator.get_params(deep=False),
+        }
+
+
 class MutualInformationSelector:
     """Top-k screening by estimated feature-response mutual information."""
 
@@ -420,6 +589,7 @@ class SplineScreeningSelector:
 
 _BUILTIN_SELECTOR_TYPES = (
     ShapSelector,
+    LimeSelector,
     MutualInformationSelector,
     MarginalCorrelationSelector,
     SplineScreeningSelector,
@@ -464,7 +634,8 @@ def make_selector(
     """Resolve a built-in or custom selector.
 
     The built-in methods are ``shap`` (the backward-compatible default),
-    ``mutual_information``, ``marginal_screening``, and ``spline_screening``.
+    ``lime``, ``mutual_information``, ``marginal_screening``, and
+    ``spline_screening``.
     """
     supplied = sum(value is not None for value in (estimator, selector, rf_params))
     if supplied > 1:
@@ -478,16 +649,21 @@ def make_selector(
     method = "shap" if selection_method is None else selection_method
     if method not in {
         "shap",
+        "lime",
         "mutual_information",
         "marginal_screening",
         "spline_screening",
     }:
         raise ValueError(
-            "selection_method must be 'shap', 'mutual_information', or "
+            "selection_method must be 'shap', 'lime', 'mutual_information', "
             "'marginal_screening', or 'spline_screening'."
         )
-    if method != "shap" and (estimator is not None or rf_params is not None):
-        raise ValueError("estimator and rf_params are available only for SHAP selection.")
+    if method not in {"shap", "lime"} and (
+        estimator is not None or rf_params is not None
+    ):
+        raise ValueError(
+            "estimator and rf_params are available only for SHAP or LIME selection."
+        )
     if method == "mutual_information":
         return MutualInformationSelector()
     if method == "marginal_screening":
@@ -496,6 +672,8 @@ def make_selector(
         return SplineScreeningSelector()
     if rf_params is not None:
         estimator = RandomForestRegressor(**_resolve_rf_params(rf_params))
+    if method == "lime":
+        return LimeSelector(estimator, selection_decimals=selection_decimals)
     return ShapSelector(estimator, selection_decimals=selection_decimals)
 
 

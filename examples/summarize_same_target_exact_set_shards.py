@@ -43,6 +43,7 @@ def parse_args(argv=None):
         "--expected-method",
         choices=(
             "shap",
+            "lime",
             "mutual_information",
             "marginal_screening",
             "spline_screening",

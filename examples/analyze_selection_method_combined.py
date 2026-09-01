@@ -1,4 +1,4 @@
-"""Combine SHAP, mutual-information, and marginal-screening validation shards.
+"""Combine SHAP, spline-screening, and marginal-screening validation shards.
 
 Only the common, scientifically comparable slice is pooled: baseline design,
 fresh auxiliary randomization, and the ``same_target`` selection event.  Raw
@@ -19,15 +19,15 @@ import pandas as pd
 from scipy import stats
 
 
-METHODS = ("shap", "mutual_information", "marginal_screening")
+METHODS = ("shap", "spline_screening", "marginal_screening")
 METHOD_LABELS = {
     "shap": "SHAP",
-    "mutual_information": "Mutual information",
-    "marginal_screening": "Marginal screening",
+    "spline_screening": "Spline",
+    "marginal_screening": "Corr",
 }
 COLORS = {
     "shap": "#4C78A8",
-    "mutual_information": "#F58518",
+    "spline_screening": "#F58518",
     "marginal_screening": "#54A24B",
 }
 BETAS = (0.3, 0.5, 0.75, 1.0)
@@ -48,9 +48,14 @@ def parse_args(argv=None):
         default=Path("outputs/selection_method_validation_clean_shards"),
     )
     parser.add_argument(
-        "--other-dir",
+        "--marginal-dir",
         type=Path,
         default=Path("outputs/selection_method_validation_same_target_mi_mc_shards"),
+    )
+    parser.add_argument(
+        "--spline-dir",
+        type=Path,
+        default=Path("outputs/selection_method_validation_same_target_spline_screening_shards"),
     )
     parser.add_argument(
         "--output-dir",
@@ -151,11 +156,11 @@ def verify_settings(reference: dict, candidate: dict, label: str):
         raise ValueError(f"Non-method experimental settings differ for {label}: {differences}")
 
 
-def load_all(shap_root: Path, other_root: Path):
+def load_all(shap_root: Path, marginal_root: Path, spline_root: Path):
     roots = {
         "shap": shap_root,
-        "mutual_information": other_root,
-        "marginal_screening": other_root,
+        "spline_screening": spline_root,
+        "marginal_screening": marginal_root,
     }
     null_frames: list[pd.DataFrame] = []
     feature_frames: list[pd.DataFrame] = []
@@ -596,9 +601,9 @@ def write_report(path: Path, calibration: pd.DataFrame, null_dist: pd.DataFrame,
         "",
         "## Main findings",
         "",
-        f"- Null calibration at alpha=0.05 is close to nominal for every method: SHAP {null_005.loc['shap', 'rejection_rate']:.2%}, mutual information {null_005.loc['mutual_information', 'rejection_rate']:.2%}, and marginal screening {null_005.loc['marginal_screening', 'rejection_rate']:.2%}. No method shows significant anti-conservative evidence in the tested alpha grid.",
-        f"- Marginal screening has the highest marginal detection power at every signal strength ({power_lookup.loc[('marginal_screening', 0.3), 'marginal_detection_power']:.2%} to {power_lookup.loc[('marginal_screening', 1.0), 'marginal_detection_power']:.2%}); SHAP is second ({power_lookup.loc[('shap', 0.3), 'marginal_detection_power']:.2%} to {power_lookup.loc[('shap', 1.0), 'marginal_detection_power']:.2%}).",
-        f"- Conditional power first exceeds the 0.80 validation target at beta=0.50 for marginal screening ({power_lookup.loc[('marginal_screening', 0.5), 'conditional_power']:.2%}) and beta=0.75 for SHAP ({power_lookup.loc[('shap', 0.75), 'conditional_power']:.2%}). Mutual information never reaches the target and falls to {power_lookup.loc[('mutual_information', 1.0), 'conditional_power']:.2%} at beta=1.0 despite near-certain signal inclusion.",
+        f"- Null calibration at alpha=0.05 is close to nominal for every method: SHAP {null_005.loc['shap', 'rejection_rate']:.2%}, Spline Screening {null_005.loc['spline_screening', 'rejection_rate']:.2%}, and Marginal Correlation Screening {null_005.loc['marginal_screening', 'rejection_rate']:.2%}. No method shows significant anti-conservative evidence in the tested alpha grid.",
+        f"- At beta=1.0, marginal detection power is {power_lookup.loc[('marginal_screening', 1.0), 'marginal_detection_power']:.2%} for Marginal Correlation Screening, {power_lookup.loc[('spline_screening', 1.0), 'marginal_detection_power']:.2%} for Spline Screening, and {power_lookup.loc[('shap', 1.0), 'marginal_detection_power']:.2%} for SHAP.",
+        f"- At beta=1.0, conditional power is {power_lookup.loc[('marginal_screening', 1.0), 'conditional_power']:.2%} for Marginal Correlation Screening, {power_lookup.loc[('spline_screening', 1.0), 'conditional_power']:.2%} for Spline Screening, and {power_lookup.loc[('shap', 1.0), 'conditional_power']:.2%} for SHAP.",
         "- All records are marked finite-sample valid and no tests failed. However, tail ESS deteriorates sharply under stronger alternatives; low/zero tail ESS and zero Monte Carlo SE at boundary p-values should be read as limited tail resolution, not perfect numerical precision.",
         "- Rejections among selected non-signal features rise with signal strength. Under this fixed-design alternative these features can have nonzero projection onto the signal mean, so this curve is diagnostic and should not be interpreted as a pure null type-I-error estimate.",
         "",
@@ -641,7 +646,9 @@ def main(argv=None):
     output = args.output_dir
     output.mkdir(parents=True, exist_ok=True)
     setup_style()
-    null, features, targets, audit = load_all(args.shap_dir, args.other_dir)
+    null, features, targets, audit = load_all(
+        args.shap_dir, args.marginal_dir, args.spline_dir
+    )
     calibration, null_dist = summarize_null(null)
     power = summarize_power(targets)
     diagnostics = summarize_diagnostics(null, features)

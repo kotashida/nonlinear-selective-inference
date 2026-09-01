@@ -223,6 +223,7 @@ def test_example_writes_calibration_bundle(tmp_path):
 def test_null_cli_accepts_builtin_selection_methods():
     for method in (
         "shap",
+        "lime",
         "mutual_information",
         "marginal_screening",
         "spline_screening",
