@@ -73,6 +73,64 @@ def test_power_decision_uses_conditional_lower_confidence_bound():
     assert row["enough_power"]
 
 
+def test_power_decision_rejects_resolution_limited_evidence():
+    frame = pd.DataFrame(
+        {
+            "selection_event": ["same_target"] * 100,
+            "target_is_signal": [True] * 100,
+            "p_value": [0.01] * 90 + [1.0] * 10,
+            "rejected": [True] * 90 + [False] * 10,
+            "successful_detection": [True] * 90 + [False] * 10,
+            "resolution_limited": [False] * 90 + [True] * 10,
+        }
+    )
+
+    row = validation._power_row(
+        frame,
+        method="mutual_information",
+        design="baseline",
+        signal_feature=0,
+        signal_strength=1.0,
+        minimum_conditional_power=0.8,
+    )
+
+    assert row["conditional_power_resolution_lower_bound"] == 0.9
+    assert row["conditional_power_resolution_upper_bound"] == 1.0
+    assert row["n_resolution_limited_signal_targets"] == 10
+    assert not row["power_evidence_sufficient"]
+    assert not row["enough_power"]
+
+
+def test_legacy_target_results_are_enriched_from_feature_diagnostics():
+    targets = pd.DataFrame(
+        {
+            "iteration": [1, 2],
+            "selection_event": ["same_target", "same_target"],
+            "target_feature": [0, 0],
+            "p_value": [1.0, 0.01],
+        }
+    )
+    features = pd.DataFrame(
+        {
+            "iteration": [1, 2],
+            "selection_event": ["same_target", "same_target"],
+            "feature": [0, 0],
+            "selected_samples": [0, 99],
+            "resolution_status": [
+                "no_selected_mc_draws_p_equals_one",
+                "resolved",
+            ],
+        }
+    )
+
+    enriched = validation._attach_resolution_diagnostics(
+        targets, features, alpha=0.05
+    )
+
+    assert enriched["minimum_attainable_p_value"].tolist() == [1.0, 0.01]
+    assert enriched["resolution_limited"].tolist() == [True, False]
+
+
 def test_comprehensive_preset_covers_multiple_designs_and_signal_strengths():
     preset = validation.PRESETS["comprehensive"]
 
@@ -194,3 +252,39 @@ def test_validation_cli_accepts_exact_set_only():
 
     assert args.selection_events == ["exact_set"]
     assert args.primary_selection_event == "exact_set"
+
+
+def test_validation_cli_accepts_exact_spline_override():
+    args = validation.parse_args(
+        [
+            "--selection-events",
+            "exact_set",
+            "--primary-selection-event",
+            "exact_set",
+            "--spline-inference-method",
+            "exact_spline",
+        ]
+    )
+
+    assert args.spline_inference_method == "exact_spline"
+
+
+def test_exact_spline_override_only_changes_spline_screening():
+    assert (
+        validation._method_inference_method(
+            "spline_screening", "mcmc_rank", "exact_spline"
+        )
+        == "exact_spline"
+    )
+    assert (
+        validation._method_inference_method(
+            "shap", "mcmc_rank", "exact_spline"
+        )
+        == "mcmc_rank"
+    )
+    assert (
+        validation._method_inference_method(
+            "mutual_information", "mcmc_rank", "exact_spline"
+        )
+        == "mcmc_rank"
+    )

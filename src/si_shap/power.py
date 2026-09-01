@@ -141,6 +141,12 @@ def _summarize_event_power(
         if np.sum(complete) > 1 else np.nan
     )
     signal_complete = target_is_signal & ~failed
+    resolution_limited = (
+        target_results["resolution_limited"].to_numpy(dtype=bool)
+        if "resolution_limited" in target_results
+        else np.zeros(len(target_results), dtype=bool)
+    )
+    signal_resolution_limited = target_is_signal & resolution_limited & ~failed
     conditional_power = (
         float(np.mean(rejected[signal_complete])) if np.any(signal_complete) else np.nan
     )
@@ -174,6 +180,17 @@ def _summarize_event_power(
     rejected_count = int(np.sum(success))
     power_lower_bound = rejected_count / n_iters
     power_upper_bound = (rejected_count + n_failed_signal) / n_iters
+    n_signal_targets = int(np.sum(target_is_signal))
+    n_resolution_limited_signal = int(np.sum(signal_resolution_limited))
+    conditional_resolution_lower = (
+        rejected_count / n_signal_targets if n_signal_targets else np.nan
+    )
+    conditional_resolution_upper = (
+        (rejected_count + n_resolution_limited_signal + n_failed_signal)
+        / n_signal_targets
+        if n_signal_targets
+        else np.nan
+    )
 
     return {
         "selection_event": selection_event,
@@ -185,6 +202,8 @@ def _summarize_event_power(
             conditional_power if strict_complete else np.nan
         ),
         "converged_conditional_power_given_signal_target": conditional_power,
+        "conditional_power_resolution_lower_bound": conditional_resolution_lower,
+        "conditional_power_resolution_upper_bound": conditional_resolution_upper,
         "power_lower_bound": power_lower_bound,
         "power_upper_bound": power_upper_bound,
         "target_signal_rate": float(np.mean(target_is_signal)),
@@ -211,8 +230,14 @@ def _summarize_event_power(
         ),
         "n_iterations": n_iters,
         "n_complete_iterations": int(np.sum(complete)),
-        "n_signal_targets": int(np.sum(target_is_signal)),
+        "n_signal_targets": n_signal_targets,
         "n_converged_signal_targets": int(np.sum(signal_complete)),
+        "n_resolution_limited_signal_targets": n_resolution_limited_signal,
+        "signal_target_resolution_limited_rate": (
+            n_resolution_limited_signal / n_signal_targets
+            if n_signal_targets
+            else 0.0
+        ),
         "n_selected_non_signal_tests": int(len(non_signal_results)),
         "n_selected_fixed_design_null_tests": int(len(fixed_null_results)),
         "alpha": alpha,
@@ -311,6 +336,9 @@ def compare_selection_event_power(
     max_final_samples: int = 800,
     min_denominator_ess: float = 80.0,
     min_tail_ess: float = 15.0,
+    mcmc_steps: int = 20,
+    mcmc_step_scales=(0.25, 0.5, 1.0, 2.0),
+    mcmc_global_jump_probability: float = 0.1,
     selection_method: str | None = None,
     rf_params=None,
     estimator=None,
@@ -380,9 +408,12 @@ def compare_selection_event_power(
         raise ValueError("iteration_start must be nonnegative.")
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
-    if inference_method not in {"conditional_mc", "ais", "exact_spline"}:
+    if inference_method not in {
+        "conditional_mc", "mcmc_rank", "ais", "exact_spline"
+    }:
         raise ValueError(
-            "inference_method must be 'conditional_mc', 'ais', or 'exact_spline'."
+            "inference_method must be 'conditional_mc', 'mcmc_rank', 'ais', "
+            "or 'exact_spline'."
         )
     if inference_method == "exact_spline" and (
         selection_method != "spline_screening"
@@ -392,7 +423,7 @@ def compare_selection_event_power(
             "exact_spline requires selection_method='spline_screening' and "
             "selection_events=('exact_set',)."
         )
-    if inference_method == "conditional_mc" and stop_when_ess_met:
+    if inference_method != "ais" and stop_when_ess_met:
         raise ValueError("stop_when_ess_met requires inference_method='ais'.")
     if inference_method == "ais" and (
         min_denominator_ess > max_final_samples
@@ -481,6 +512,9 @@ def compare_selection_event_power(
                     max_final_samples=max_final_samples,
                     min_denominator_ess=min_denominator_ess,
                     min_tail_ess=min_tail_ess,
+                    mcmc_steps=mcmc_steps,
+                    mcmc_step_scales=mcmc_step_scales,
+                    mcmc_global_jump_probability=mcmc_global_jump_probability,
                     stop_when_ess_met=stop_when_ess_met,
                 )
             selected = tuple(
@@ -522,6 +556,13 @@ def compare_selection_event_power(
             target_is_signal = observed_target in signal_feature_set
             failed = bool(row["failed"])
             rejected = bool(row["rejected"])
+            minimum_attainable_p_value = float(
+                row.get("minimum_attainable_p_value", np.nan)
+            )
+            resolution_limited = bool(
+                np.isfinite(minimum_attainable_p_value)
+                and minimum_attainable_p_value >= alpha
+            )
             target_records.append(
                 {
                     "iteration": iteration,
@@ -533,6 +574,9 @@ def compare_selection_event_power(
                     "p_value": float(row["p_value_used"]),
                     "failed": failed,
                     "rejected": rejected,
+                    "resolution_status": row.get("resolution_status", "not_reported"),
+                    "minimum_attainable_p_value": minimum_attainable_p_value,
+                    "resolution_limited": resolution_limited,
                     "successful_detection": target_is_signal and rejected,
                     "failed_signal_test": target_is_signal and failed,
                 }
@@ -588,6 +632,9 @@ def compare_selection_event_power(
             ),
             "multiplicity": multiplicity,
             "inference_method": inference_method,
+            "mcmc_steps": mcmc_steps,
+            "mcmc_step_scales": tuple(mcmc_step_scales),
+            "mcmc_global_jump_probability": mcmc_global_jump_probability,
             "variance_method": "known_simulation_sigma",
             "sigma": SIMULATION_SIGMA,
             "rf_params": (

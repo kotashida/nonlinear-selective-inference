@@ -10,6 +10,7 @@ os.environ["POLARS_MAX_THREADS"] = "1"
 import numpy as np
 import pytest
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.feature_selection import mutual_info_regression
 
 from si_shap.selection import (
     LimeSelector,
@@ -225,6 +226,25 @@ def test_non_shap_builtin_selectors_are_deterministic(selector):
     np.testing.assert_array_equal(first.selected_features, first.ranking[:2])
     np.testing.assert_array_equal(first.ranking, second.ranking)
     np.testing.assert_array_equal(first.scores, second.scores)
+
+
+def test_mutual_information_selector_matches_sklearn_reference():
+    rng = np.random.default_rng(73)
+    X = rng.normal(size=(50, 5))
+    y = np.square(X[:, 2]) + 0.1 * rng.normal(size=50)
+    selector = MutualInformationSelector(random_state=42, n_neighbors=3)
+
+    result = selector.select(X, y, 2)
+    expected = mutual_info_regression(
+        X,
+        y,
+        discrete_features=False,
+        n_neighbors=3,
+        random_state=42,
+    )
+
+    np.testing.assert_array_equal(result.scores, expected)
+    np.testing.assert_array_equal(result.selected_features, _top_k(expected, 2))
 
 
 def test_marginal_selector_handles_constant_columns_deterministically():

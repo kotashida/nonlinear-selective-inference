@@ -285,6 +285,9 @@ def compare_selection_event_null_calibration(
     max_final_samples: int = 800,
     min_denominator_ess: float = 80.0,
     min_tail_ess: float = 15.0,
+    mcmc_steps: int = 20,
+    mcmc_step_scales=(0.25, 0.5, 1.0, 2.0),
+    mcmc_global_jump_probability: float = 0.1,
     selection_method: str | None = None,
     rf_params=None,
     estimator=None,
@@ -347,9 +350,12 @@ def compare_selection_event_null_calibration(
     seed = _validate_seed("seed", seed)
     if design_seed is not None:
         design_seed = _validate_seed("design_seed", design_seed)
-    if inference_method not in {"conditional_mc", "ais", "exact_spline"}:
+    if inference_method not in {
+        "conditional_mc", "mcmc_rank", "ais", "exact_spline"
+    }:
         raise ValueError(
-            "inference_method must be 'conditional_mc', 'ais', or 'exact_spline'."
+            "inference_method must be 'conditional_mc', 'mcmc_rank', 'ais', "
+            "or 'exact_spline'."
         )
     if inference_method == "exact_spline" and (
         selection_method != "spline_screening" or events != ("exact_set",)
@@ -358,7 +364,7 @@ def compare_selection_event_null_calibration(
             "exact_spline requires selection_method='spline_screening' and "
             "selection_events=('exact_set',)."
         )
-    if inference_method == "conditional_mc" and stop_when_ess_met:
+    if inference_method != "ais" and stop_when_ess_met:
         raise ValueError("stop_when_ess_met requires inference_method='ais'.")
     if inference_method == "ais" and (
         min_denominator_ess > max_final_samples
@@ -472,6 +478,9 @@ def compare_selection_event_null_calibration(
                     max_final_samples=max_final_samples,
                     min_denominator_ess=min_denominator_ess,
                     min_tail_ess=min_tail_ess,
+                    mcmc_steps=mcmc_steps,
+                    mcmc_step_scales=mcmc_step_scales,
+                    mcmc_global_jump_probability=mcmc_global_jump_probability,
                     stop_when_ess_met=stop_when_ess_met,
                 )
             returned_selected = tuple(
@@ -545,6 +554,9 @@ def compare_selection_event_null_calibration(
             "fixed_auxiliary_u": fixed_auxiliary_u,
             "multiplicity": "none",
             "inference_method": inference_method,
+            "mcmc_steps": mcmc_steps,
+            "mcmc_step_scales": tuple(mcmc_step_scales),
+            "mcmc_global_jump_probability": mcmc_global_jump_probability,
             "alpha_levels": levels,
             "seed": int(seed),
             "design_seed": resolved_design_seed,

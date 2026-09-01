@@ -21,6 +21,7 @@ from .inference import (
     _run_ais,
     _run_conditional_mc,
     _run_exact_spline,
+    _run_mcmc_rank,
     _spline_effect_basis,
     _spline_exact_set_intervals,
 )
@@ -163,6 +164,9 @@ def selective_inference(
     max_final_samples: int = 800,
     min_denominator_ess: float = 80.0,
     min_tail_ess: float = 15.0,
+    mcmc_steps: int = 20,
+    mcmc_step_scales=(0.25, 0.5, 1.0, 2.0),
+    mcmc_global_jump_probability: float = 0.1,
     stop_when_ess_met: bool = False,
     verify_selector_determinism: bool = True,
 ):
@@ -177,8 +181,9 @@ def selective_inference(
     ``mutual_information``, ``marginal_screening``, or ``spline_screening``;
     a custom ``selector`` may be supplied instead.
     ``sigma`` must be externally supplied and known under the stated model.
-    The default ``conditional_mc`` method returns a finite-sample-valid,
-    conservative conditional Monte Carlo rank p-value. ``inference_method='ais'``
+    Both ``conditional_mc`` and ``mcmc_rank`` return finite-sample-valid rank
+    p-values.  The latter uses reversible Markov-chain proposals to retain
+    resolution for rare selection events. ``inference_method='ais'``
     retains the self-normalized importance-sampling estimate for exploratory
     work, but that estimate is not an exact finite-sample p-value. Custom
     selectors are checked on repeated identical inputs unless
@@ -201,9 +206,12 @@ def selective_inference(
         raise ValueError("same_target requires target_rule='uniform_from_selected'.")
     if multiplicity not in {"none", "bonferroni", "holm"}:
         raise ValueError("multiplicity must be 'none', 'bonferroni', or 'holm'.")
-    if inference_method not in {"conditional_mc", "ais", "exact_spline"}:
+    if inference_method not in {
+        "conditional_mc", "mcmc_rank", "ais", "exact_spline"
+    }:
         raise ValueError(
-            "inference_method must be 'conditional_mc', 'ais', or 'exact_spline'."
+            "inference_method must be 'conditional_mc', 'mcmc_rank', 'ais', "
+            "or 'exact_spline'."
         )
     if (
         selection_event == "feature_inclusion"
@@ -220,6 +228,7 @@ def selective_inference(
         "pilot_samples": pilot_samples,
         "final_batch_size": final_batch_size,
         "max_final_samples": max_final_samples,
+        "mcmc_steps": mcmc_steps,
     }.items():
         if isinstance(value, (bool, np.bool_)) or not isinstance(
             value, (int, np.integer)
@@ -229,6 +238,20 @@ def selective_inference(
         raise ValueError("pilot_iters must be nonnegative and pilot_samples positive.")
     if final_batch_size < 1 or max_final_samples < 1:
         raise ValueError("Final AIS sample counts must be positive.")
+    try:
+        mcmc_step_scales = tuple(float(value) for value in mcmc_step_scales)
+    except (TypeError, ValueError) as error:
+        raise TypeError("mcmc_step_scales must be an iterable of numbers.") from error
+    if not mcmc_step_scales or not np.all(np.isfinite(mcmc_step_scales)) or any(
+        value <= 0.0 for value in mcmc_step_scales
+    ):
+        raise ValueError("mcmc_step_scales must contain finite positive values.")
+    if (
+        not np.isscalar(mcmc_global_jump_probability)
+        or not np.isfinite(mcmc_global_jump_probability)
+        or not 0.0 <= float(mcmc_global_jump_probability) <= 1.0
+    ):
+        raise ValueError("mcmc_global_jump_probability must lie in [0, 1].")
     for name, value in {
         "min_denominator_ess": min_denominator_ess,
         "min_tail_ess": min_tail_ess,
@@ -249,10 +272,10 @@ def selective_inference(
         raise ValueError("target_seed must be a nonnegative integer.")
     if not isinstance(stop_when_ess_met, (bool, np.bool_)):
         raise TypeError("stop_when_ess_met must be boolean.")
-    if inference_method == "conditional_mc" and stop_when_ess_met:
+    if inference_method != "ais" and stop_when_ess_met:
         raise ValueError(
             "stop_when_ess_met is available only for exploratory AIS; "
-            "conditional_mc always uses its fixed proposal budget."
+            "finite-sample rank methods always use their fixed proposal budget."
         )
     if inference_method == "ais" and (
         min_denominator_ess > max_final_samples
@@ -362,6 +385,10 @@ def selective_inference(
             "draws reproduce selection; inspect selected_samples."
             if inference_method == "conditional_mc"
             else
+            "Exact-set conditioning can be rare; reversible MCMC rank inference "
+            "preserves finite-sample validity while improving rare-event resolution."
+            if inference_method == "mcmc_rank"
+            else
             "Exact-set conditioning can make the event rare; exploratory AIS rows "
             "are estimates only and require ESS/Monte Carlo diagnostics."
         )
@@ -432,6 +459,17 @@ def selective_inference(
                 feature_rng,
                 batch_size=final_batch_size,
                 n_proposals=max_final_samples,
+            )
+        elif inference_method == "mcmc_rank":
+            p_value, diagnostics = _run_mcmc_rank(
+                t_obs,
+                test_rank,
+                is_selected,
+                feature_rng,
+                n_replicates=max_final_samples,
+                n_steps=mcmc_steps,
+                step_scales=mcmc_step_scales,
+                global_jump_probability=float(mcmc_global_jump_probability),
             )
         else:
             p_value, diagnostics = _run_ais(
@@ -505,6 +543,9 @@ def selective_inference(
         "max_final_samples": max_final_samples,
         "min_denominator_ess": min_denominator_ess,
         "min_tail_ess": min_tail_ess,
+        "mcmc_steps": int(mcmc_steps),
+        "mcmc_step_scales": mcmc_step_scales,
+        "mcmc_global_jump_probability": float(mcmc_global_jump_probability),
         "stop_when_ess_met": bool(stop_when_ess_met),
         "verify_selector_determinism": bool(verify_selector_determinism),
         "determinism_check_repetitions": 3 if check_repeated_calls else 1,

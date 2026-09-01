@@ -28,6 +28,7 @@ from examples.validate_selection_methods import (
     _apply_calibration_decisions,
     _auxiliary_label,
     _calibration_rows,
+    _attach_resolution_diagnostics,
     _power_row,
     _signal_feature,
 )
@@ -69,6 +70,10 @@ def _validate_settings(shards: list[Path], settings: list[dict]) -> None:
         "methods",
         "designs",
         "max_final_samples",
+        "inference_method",
+        "spline_inference_method",
+        "method_inference_methods",
+        "mcmc_steps",
         "fixed_auxiliary_values",
         "signal_strengths",
         "signal_positions",
@@ -80,6 +85,7 @@ def _validate_settings(shards: list[Path], settings: list[dict]) -> None:
         "alpha_levels",
         "design_seed",
         "rf_jobs",
+        "cross_method_randomness",
     )
     reference = settings[0]
     for shard, candidate in zip(shards[1:], settings[1:]):
@@ -193,18 +199,29 @@ def summarize_shards(input_dir: Path, output_dir: Path, expected_shards=None):
                 feature = _signal_feature(position, design["n_features"])
                 for strength in reference["signal_strengths"]:
                     label = str(strength).replace(".", "p")
-                    relative = (
+                    relative_directory = (
                         Path(method)
                         / design_name
                         / f"power_feature_{feature}_beta_{label}"
-                        / "target_results.csv"
                     )
+                    relative = relative_directory / "target_results.csv"
                     frame = _read_configuration_frames(
                         shards,
                         relative,
                         expected_per_shard=power_counts,
                         primary_event=primary_event,
                     )
+                    feature_relative = relative_directory / "feature_results.csv"
+                    if all((shard / feature_relative).is_file() for shard in shards):
+                        feature_frame = _read_configuration_frames(
+                            shards,
+                            feature_relative,
+                            expected_per_shard=power_counts,
+                            primary_event=primary_event,
+                        )
+                        frame = _attach_resolution_diagnostics(
+                            frame, feature_frame, alpha=0.05
+                        )
                     power_rows.append(
                         _power_row(
                             frame,

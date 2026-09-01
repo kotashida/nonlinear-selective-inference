@@ -212,6 +212,42 @@ def test_default_api_uses_same_target_and_generic_result_names(monkeypatch):
     )
 
 
+def test_public_api_routes_reversible_mcmc_rank_settings(monkeypatch):
+    received = {}
+
+    def fake_mcmc(t_obs, rank, is_selected, rng, **kwargs):
+        received.update(kwargs)
+        return 0.025, {
+            "status": "ok",
+            "denominator_ess": 39.0,
+            "tail_ess": 0.0,
+            "minimum_attainable_p_value": 0.025,
+        }
+
+    monkeypatch.setattr("si_shap.api._run_mcmc_rank", fake_mcmc)
+    X, y = _data()
+    result = selective_inference(
+        X,
+        y,
+        k_select=2,
+        sigma=1.0,
+        selector=FixedSelector(),
+        inference_method="mcmc_rank",
+        max_final_samples=39,
+        mcmc_steps=7,
+        mcmc_step_scales=(0.5, 1.5),
+        mcmc_global_jump_probability=0.2,
+    )
+
+    assert result["feature_results"].iloc[0]["raw_selective_p_value"] == 0.025
+    assert received == {
+        "n_replicates": 39,
+        "n_steps": 7,
+        "step_scales": (0.5, 1.5),
+        "global_jump_probability": 0.2,
+    }
+
+
 @pytest.mark.parametrize(
     "selection_method",
     ["mutual_information", "marginal_screening", "spline_screening"],

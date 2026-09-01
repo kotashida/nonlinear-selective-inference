@@ -150,7 +150,7 @@ def parse_args(argv=None):
     parser.add_argument("--stop-when-ess-met", action="store_true")
     parser.add_argument(
         "--inference-method",
-        choices=("conditional_mc", "ais"),
+        choices=("conditional_mc", "mcmc_rank", "ais"),
         default="conditional_mc",
     )
     parser.add_argument(
