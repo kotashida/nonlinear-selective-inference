@@ -80,10 +80,11 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--inference-method",
-        choices=("conditional_mc", "ais"),
+        choices=("conditional_mc", "mcmc_rank", "ais"),
         default="conditional_mc",
         help=(
-            "finite-sample-valid conditional Monte Carlo (default), or the "
+            "finite-sample-valid conditional Monte Carlo (default), "
+            "finite-sample-valid reversible MCMC rank inference, or the "
             "exploratory self-normalized AIS estimate"
         ),
     )

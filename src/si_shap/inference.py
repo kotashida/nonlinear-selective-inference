@@ -370,6 +370,7 @@ def _run_conditional_mc(
         proposals += current_size
 
     p_value = float((tail_samples + 1.0) / (selected_samples + 1.0))
+    minimum_attainable_p_value = float(1.0 / (selected_samples + 1.0))
     if selected_samples:
         tail_fraction = tail_samples / selected_samples
         mc_se = float(
@@ -388,6 +389,7 @@ def _run_conditional_mc(
         "proposals": proposals,
         "selected_samples": selected_samples,
         "tail_samples": tail_samples,
+        "minimum_attainable_p_value": minimum_attainable_p_value,
         "denominator_ess": float(selected_samples),
         "tail_ess": float(tail_samples),
         "mc_se": mc_se,
@@ -399,6 +401,161 @@ def _run_conditional_mc(
         "sampling_mode": "fixed_budget_conditional_mc",
         "p_value_method": "conditional_monte_carlo_rank",
         "finite_sample_valid": True,
+    }
+
+
+def _mcmc_transition(
+    initial,
+    rank,
+    is_selected,
+    rng,
+    *,
+    n_steps,
+    step_scales,
+    global_jump_probability,
+):
+    """Apply a reversible kernel targeting chi(rank) restricted to selection."""
+    current = float(initial)
+    current_log_density = float(stats.chi.logpdf(current, df=rank))
+    accepted = 0
+    for _ in range(n_steps):
+        if rng.random() < global_jump_probability:
+            proposal = float(stats.chi.rvs(df=rank, random_state=rng))
+            if is_selected(proposal):
+                current = proposal
+                current_log_density = float(
+                    stats.chi.logpdf(current, df=rank)
+                )
+                accepted += 1
+            continue
+
+        scale = float(step_scales[rng.integers(len(step_scales))])
+        proposal = abs(float(current + rng.normal(scale=scale)))
+        if not is_selected(proposal):
+            continue
+        proposal_log_density = float(stats.chi.logpdf(proposal, df=rank))
+        if np.log(rng.random()) <= min(
+            0.0, proposal_log_density - current_log_density
+        ):
+            current = proposal
+            current_log_density = proposal_log_density
+            accepted += 1
+    return current, accepted
+
+
+def _run_mcmc_rank(
+    t_obs,
+    rank,
+    is_selected,
+    rng,
+    *,
+    n_replicates=199,
+    n_steps=20,
+    step_scales=(0.25, 0.5, 1.0, 2.0),
+    global_jump_probability=0.1,
+):
+    """Return an exact parallel reversible-MCMC rank p-value.
+
+    Let ``K`` be the reversible transition implemented above and let
+    ``H ~ K^L(t_obs, .)``.  Reversibility implies that, under the selective
+    null, ``t_obs | H`` also has law ``K^L(H, .)``.  Replicates independently
+    drawn from that same law are therefore exchangeable with the observation
+    conditional on ``H``.  Their conservative upper rank is a finite-sample
+    valid p-value even when the selection event is extremely rare under the
+    unconditional chi law.  Mixing affects power, not validity.
+    """
+    if (
+        isinstance(n_replicates, (bool, np.bool_))
+        or not isinstance(n_replicates, (int, np.integer))
+        or n_replicates < 1
+    ):
+        raise ValueError("n_replicates must be a positive integer.")
+    if (
+        isinstance(n_steps, (bool, np.bool_))
+        or not isinstance(n_steps, (int, np.integer))
+        or n_steps < 1
+    ):
+        raise ValueError("n_steps must be a positive integer.")
+    scales = np.asarray(step_scales, dtype=float)
+    if scales.ndim != 1 or scales.size == 0 or not np.all(
+        np.isfinite(scales) & (scales > 0.0)
+    ):
+        raise ValueError("step_scales must contain finite positive values.")
+    if (
+        not np.isscalar(global_jump_probability)
+        or not np.isfinite(global_jump_probability)
+        or not 0.0 <= float(global_jump_probability) <= 1.0
+    ):
+        raise ValueError("global_jump_probability must lie in [0, 1].")
+    if not is_selected(float(t_obs)):
+        raise ValueError("t_obs must satisfy the selection event.")
+
+    transition_kwargs = {
+        "n_steps": int(n_steps),
+        "step_scales": scales,
+        "global_jump_probability": float(global_jump_probability),
+    }
+    hub, hub_accepted = _mcmc_transition(
+        t_obs,
+        rank,
+        is_selected,
+        rng,
+        **transition_kwargs,
+    )
+    replicates = np.empty(int(n_replicates), dtype=float)
+    replicate_acceptances = 0
+    for index in range(int(n_replicates)):
+        replicates[index], accepted = _mcmc_transition(
+            hub,
+            rank,
+            is_selected,
+            rng,
+            **transition_kwargs,
+        )
+        replicate_acceptances += accepted
+
+    tail_samples = int(np.sum(replicates >= t_obs))
+    p_value = float((tail_samples + 1.0) / (n_replicates + 1.0))
+    tail_fraction = tail_samples / n_replicates
+    mc_se = float(
+        np.sqrt(tail_fraction * (1.0 - tail_fraction) / n_replicates)
+    )
+    ci_lower, ci_upper = _clopper_pearson_interval(
+        tail_samples, int(n_replicates)
+    )
+    moved_replicas = int(np.sum(replicates != hub))
+    total_steps = int((n_replicates + 1) * n_steps)
+    return p_value, {
+        "status": "ok",
+        "resolution_status": (
+            "resolved" if moved_replicas else "no_moved_mcmc_replicas_p_equals_one"
+        ),
+        "proposals": total_steps,
+        "selected_samples": int(n_replicates),
+        "tail_samples": tail_samples,
+        "minimum_attainable_p_value": float(1.0 / (n_replicates + 1.0)),
+        "denominator_ess": float(n_replicates),
+        "tail_ess": float(tail_samples),
+        "mc_se": mc_se,
+        "mc_ci_95_lower": ci_lower,
+        "mc_ci_95_upper": ci_upper,
+        "tail_probability_mc_ci_95_lower": ci_lower,
+        "tail_probability_mc_ci_95_upper": ci_upper,
+        "selection_probability_estimate": np.nan,
+        "sampling_mode": "parallel_reversible_mcmc",
+        "p_value_method": "parallel_reversible_mcmc_rank",
+        "finite_sample_valid": True,
+        "mcmc_hub": float(hub),
+        "mcmc_steps": int(n_steps),
+        "mcmc_replicates": int(n_replicates),
+        "mcmc_hub_acceptance_rate": float(hub_accepted / n_steps),
+        "mcmc_replicate_acceptance_rate": float(
+            replicate_acceptances / (n_replicates * n_steps)
+        ),
+        "mcmc_moved_replicas": moved_replicas,
+        "mcmc_unique_replicas": int(np.unique(replicates).size),
+        "mcmc_global_jump_probability": float(global_jump_probability),
+        "mcmc_step_scales": tuple(float(value) for value in scales),
     }
 
 

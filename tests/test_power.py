@@ -359,6 +359,8 @@ def test_comparison_pairs_data_and_reports_power_difference(monkeypatch):
                 "selection_event": [selection_event],
                 "raw_selective_p_value": [signal_p_value],
                 "adjusted_selective_p_value": [signal_p_value],
+                "resolution_status": ["resolved"],
+                "minimum_attainable_p_value": [0.01],
             }
         )
         return {
@@ -390,6 +392,7 @@ def test_comparison_pairs_data_and_reports_power_difference(monkeypatch):
     assert "converged_fixed_design_null_rejection_rate" in result["summary"]
     assert "fixed_design_null" in result["feature_results"]
     assert "null_projection_norm" in result["feature_results"]
+    assert not result["target_results"]["resolution_limited"].any()
 
     for offset in range(0, len(calls), 3):
         group = calls[offset : offset + 3]
@@ -433,3 +436,36 @@ def test_failed_signal_test_makes_strict_power_unavailable(monkeypatch):
     assert np.isnan(summary.loc["exact_set", "power"])
     assert summary.loc["exact_set", "signal_target_test_failure_rate"] == 1.0
     assert summary.loc["feature_inclusion", "power"] == 1.0
+
+
+def test_resolution_limited_signal_tests_produce_power_bounds(monkeypatch):
+    def fake_selective_inference(X, y, **kwargs):
+        return {
+            "observed_selected_features": np.array([0]),
+            "feature_results": pd.DataFrame(
+                {
+                    "feature": [0],
+                    "selection_event": [kwargs["selection_event"]],
+                    "raw_selective_p_value": [1.0],
+                    "adjusted_selective_p_value": [1.0],
+                    "resolution_status": ["no_selected_mc_draws_p_equals_one"],
+                    "minimum_attainable_p_value": [1.0],
+                }
+            ),
+        }
+
+    monkeypatch.setattr(power, "selective_inference", fake_selective_inference)
+    result = power.compare_selection_event_power(
+        n_iters=1,
+        n_samples=20,
+        n_features=2,
+        k_select=1,
+        selector=DummySelector(),
+        selection_events=("same_target",),
+    )
+
+    summary = result["summary"].iloc[0]
+    assert summary["conditional_power_resolution_lower_bound"] == 0.0
+    assert summary["conditional_power_resolution_upper_bound"] == 1.0
+    assert summary["n_resolution_limited_signal_targets"] == 1
+    assert result["target_results"].iloc[0]["resolution_limited"]

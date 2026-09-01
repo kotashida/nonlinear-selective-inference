@@ -123,6 +123,51 @@ DEFAULT_MIN_CALIBRATION_ITERATIONS = 1000
 DEFAULT_MIN_SIGNAL_TARGETS = 100
 
 
+def _attach_resolution_diagnostics(
+    target_results: pd.DataFrame,
+    feature_results: pd.DataFrame,
+    *,
+    alpha: float = 0.05,
+) -> pd.DataFrame:
+    """Attach conditional-MC resolution fields to legacy target results."""
+    if "resolution_limited" in target_results:
+        return target_results.copy()
+    features = feature_results.copy()
+    if "minimum_attainable_p_value" not in features:
+        if "selected_samples" not in features:
+            return target_results.copy()
+        features["minimum_attainable_p_value"] = 1.0 / (
+            features["selected_samples"].astype(float) + 1.0
+        )
+    if "resolution_status" not in features:
+        features["resolution_status"] = np.where(
+            features["selected_samples"].astype(float) > 0,
+            "resolved",
+            "no_selected_mc_draws_p_equals_one",
+        )
+    features = features.rename(columns={"feature": "target_feature"})
+    keys = ["iteration", "selection_event", "target_feature"]
+    if (
+        "validation_shard" in target_results
+        and "validation_shard" in features
+    ):
+        keys.insert(0, "validation_shard")
+    diagnostics = features[
+        keys + ["resolution_status", "minimum_attainable_p_value"]
+    ]
+    enriched = target_results.merge(
+        diagnostics,
+        on=keys,
+        how="left",
+        validate="one_to_one",
+    )
+    enriched["resolution_limited"] = (
+        enriched["minimum_attainable_p_value"].notna()
+        & (enriched["minimum_attainable_p_value"] >= alpha)
+    )
+    return enriched
+
+
 def _auxiliary_argument(value: str) -> float | None:
     if value.lower() in {"fresh", "random", "none"}:
         return None
@@ -172,6 +217,14 @@ def _seed(*parts: int) -> int:
     )
 
 
+def _method_inference_method(
+    method: str, inference_method: str, spline_inference_method: str
+) -> str:
+    if method == "spline_screening" and spline_inference_method == "exact_spline":
+        return "exact_spline"
+    return inference_method
+
+
 def _load_or_run_null(
     output_dir: Path,
     *,
@@ -181,6 +234,8 @@ def _load_or_run_null(
     n_iters: int,
     fixed_auxiliary_u: float | None,
     max_final_samples: int,
+    inference_method: str = "mcmc_rank",
+    mcmc_steps: int = 20,
     seed: int,
     design_seed: int | None = None,
     rf_jobs: int = 32,
@@ -199,7 +254,8 @@ def _load_or_run_null(
         seed=seed,
         design_seed=design_seed,
         rf_params={"n_jobs": rf_jobs} if method in {"shap", "lime"} else None,
-        inference_method="conditional_mc",
+        inference_method=inference_method,
+        mcmc_steps=mcmc_steps,
         final_batch_size=min(80, max_final_samples),
         max_final_samples=max_final_samples,
     )
@@ -218,13 +274,21 @@ def _load_or_run_power(
     signal_feature: int,
     signal_strength: float,
     max_final_samples: int,
+    inference_method: str = "mcmc_rank",
+    mcmc_steps: int = 20,
     seed: int,
     rf_jobs: int = 32,
     selection_events: tuple[str, ...] = COMPARISON_EVENTS,
 ):
     result_path = output_dir / "target_results.csv"
     if result_path.is_file() and not overwrite:
-        return pd.read_csv(result_path)
+        targets = pd.read_csv(result_path)
+        feature_path = output_dir / "feature_results.csv"
+        if feature_path.is_file():
+            return _attach_resolution_diagnostics(
+                targets, pd.read_csv(feature_path), alpha=0.05
+            )
+        return targets
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     result = compare_selection_event_power(
         n_iters=n_iters,
@@ -235,7 +299,8 @@ def _load_or_run_power(
         rf_params={"n_jobs": rf_jobs} if method in {"shap", "lime"} else None,
         selection_events=selection_events,
         seed=seed,
-        inference_method="conditional_mc",
+        inference_method=inference_method,
+        mcmc_steps=mcmc_steps,
         final_batch_size=min(80, max_final_samples),
         max_final_samples=max_final_samples,
     )
@@ -298,6 +363,13 @@ def _power_row(
     primary = frame[frame["selection_event"] == primary_event].copy()
     signal_targets = primary[primary["target_is_signal"].astype(bool)]
     finite_signal = signal_targets[np.isfinite(signal_targets["p_value"])]
+    resolution_limited = (
+        signal_targets["resolution_limited"].astype(bool)
+        if "resolution_limited" in signal_targets
+        else pd.Series(False, index=signal_targets.index)
+    )
+    resolution_limited &= np.isfinite(signal_targets["p_value"])
+    n_resolution_limited = int(resolution_limited.sum())
     signal_successes = int(finite_signal["rejected"].astype(bool).sum())
     conditional_trials = len(finite_signal)
     conditional_power = (
@@ -319,6 +391,12 @@ def _power_row(
         "n_iterations": len(primary),
         "n_signal_targets": len(signal_targets),
         "n_failed_signal_targets": len(signal_targets) - conditional_trials,
+        "n_resolution_limited_signal_targets": n_resolution_limited,
+        "signal_target_resolution_limited_rate": (
+            n_resolution_limited / len(signal_targets)
+            if len(signal_targets)
+            else 0.0
+        ),
         "target_signal_rate": (
             len(signal_targets) / len(primary) if len(primary) else np.nan
         ),
@@ -330,16 +408,34 @@ def _power_row(
         "conditional_power_given_signal_target": conditional_power,
         "conditional_power_ci_95_lower": conditional_lower,
         "conditional_power_ci_95_upper": conditional_upper,
+        "conditional_power_resolution_lower_bound": (
+            signal_successes / len(signal_targets)
+            if len(signal_targets)
+            else np.nan
+        ),
+        "conditional_power_resolution_upper_bound": (
+            (
+                signal_successes
+                + n_resolution_limited
+                + len(signal_targets)
+                - conditional_trials
+            )
+            / len(signal_targets)
+            if len(signal_targets)
+            else np.nan
+        ),
         "minimum_conditional_power": minimum_conditional_power,
         "minimum_signal_targets": minimum_signal_targets,
         "power_evidence_sufficient": bool(
             conditional_trials >= minimum_signal_targets
             and conditional_trials == len(signal_targets)
+            and n_resolution_limited == 0
         ),
         "enough_power": bool(
             conditional_trials >= minimum_signal_targets
             and conditional_lower >= minimum_conditional_power
             and conditional_trials == len(signal_targets)
+            and n_resolution_limited == 0
         ),
     }
 
@@ -381,6 +477,21 @@ def parse_args(argv=None):
     parser.add_argument("--n-null-iters", type=int)
     parser.add_argument("--n-power-iters", type=int)
     parser.add_argument("--max-final-samples", type=int)
+    parser.add_argument(
+        "--inference-method",
+        choices=("conditional_mc", "mcmc_rank"),
+        default="mcmc_rank",
+    )
+    parser.add_argument(
+        "--spline-inference-method",
+        choices=("inherit", "exact_spline"),
+        default="inherit",
+        help=(
+            "use exact analytic inference for spline_screening when the sole "
+            "selection event is exact_set; otherwise inherit --inference-method"
+        ),
+    )
+    parser.add_argument("--mcmc-steps", type=int, default=20)
     parser.add_argument(
         "--auxiliary-values",
         nargs="+",
@@ -448,6 +559,13 @@ def main(argv=None):
         raise ValueError(
             f"--selection-events must include the primary event {primary_event!r}."
         )
+    if args.spline_inference_method == "exact_spline" and selection_events != (
+        "exact_set",
+    ):
+        raise ValueError(
+            "--spline-inference-method exact_spline requires "
+            "--selection-events exact_set."
+        )
     preset = dict(PRESETS[args.preset])
     designs = tuple(args.designs or preset["designs"])
     n_null_iters = args.n_null_iters or preset["n_null_iters"]
@@ -474,6 +592,9 @@ def main(argv=None):
     calibration_rows = []
     power_rows = []
     for method_index, method in enumerate(args.methods):
+        method_inference = _method_inference_method(
+            method, args.inference_method, args.spline_inference_method
+        )
         for design_index, design_name in enumerate(designs):
             design = DESIGNS[design_name]
             shared_design_seed = (
@@ -494,7 +615,9 @@ def main(argv=None):
                     n_iters=n_null_iters,
                     fixed_auxiliary_u=fixed_u,
                     max_final_samples=max_final_samples,
-                    seed=_seed(args.seed, method_index, design_index, auxiliary_index),
+                    inference_method=method_inference,
+                    mcmc_steps=args.mcmc_steps,
+                    seed=_seed(args.seed, design_index, auxiliary_index),
                     design_seed=shared_design_seed,
                     rf_jobs=args.rf_jobs,
                     selection_events=selection_events,
@@ -530,10 +653,11 @@ def main(argv=None):
                         signal_feature=feature,
                         signal_strength=strength,
                         max_final_samples=max_final_samples,
+                        inference_method=method_inference,
+                        mcmc_steps=args.mcmc_steps,
                         seed=_seed(
                             args.seed,
                             10_000,
-                            method_index,
                             design_index,
                             position_index,
                             strength_index,
@@ -568,6 +692,16 @@ def main(argv=None):
         "n_null_iters": n_null_iters,
         "n_power_iters": n_power_iters,
         "max_final_samples": max_final_samples,
+        "inference_method": args.inference_method,
+        "spline_inference_method": args.spline_inference_method,
+        "method_inference_methods": {
+            method: _method_inference_method(
+                method, args.inference_method, args.spline_inference_method
+            )
+            for method in args.methods
+        },
+        "mcmc_steps": args.mcmc_steps,
+        "cross_method_randomness": "shared_data_target_and_monte_carlo_seeds",
         "fixed_auxiliary_values": fixed_auxiliary_values,
         "signal_strengths": signal_strengths,
         "signal_positions": signal_positions,

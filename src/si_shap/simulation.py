@@ -246,6 +246,9 @@ def run_simulation(
     max_final_samples=800,
     min_denominator_ess=80.0,
     min_tail_ess=15.0,
+    mcmc_steps=20,
+    mcmc_step_scales=(0.25, 0.5, 1.0, 2.0),
+    mcmc_global_jump_probability=0.1,
     rf_params=None,
     estimator=None,
     selector=None,
@@ -308,9 +311,11 @@ def run_simulation(
             "the featurewise p-values condition on different inclusion events. "
             "Use multiplicity='bonferroni' or a common exact_set/exact_ranking event."
         )
-    if inference_method not in {"conditional_mc", "ais"}:
-        raise ValueError("inference_method must be 'conditional_mc' or 'ais'.")
-    if inference_method == "conditional_mc" and stop_when_ess_met:
+    if inference_method not in {"conditional_mc", "mcmc_rank", "ais"}:
+        raise ValueError(
+            "inference_method must be 'conditional_mc', 'mcmc_rank', or 'ais'."
+        )
+    if inference_method != "ais" and stop_when_ess_met:
         raise ValueError("stop_when_ess_met requires inference_method='ais'.")
     if inference_method == "ais" and (
         min_denominator_ess > max_final_samples
@@ -352,6 +357,10 @@ def run_simulation(
             "event; inspect selected_samples and selection_probability_estimate."
             if inference_method == "conditional_mc"
             else
+            "Exact-set conditioning can be rare. Reversible MCMC rank inference "
+            "preserves finite-sample validity while improving rare-event resolution."
+            if inference_method == "mcmc_rank"
+            else
             "Exact-set conditioning can be rare. Exploratory AIS estimates can "
             "fail when too little selected or tail weight is sampled; inspect "
             "status, denominator_ess, and tail_ess."
@@ -392,6 +401,9 @@ def run_simulation(
                 max_final_samples=max_final_samples,
                 min_denominator_ess=min_denominator_ess,
                 min_tail_ess=min_tail_ess,
+                mcmc_steps=mcmc_steps,
+                mcmc_step_scales=mcmc_step_scales,
+                mcmc_global_jump_probability=mcmc_global_jump_probability,
                 stop_when_ess_met=stop_when_ess_met,
             )
         random_selected = random_selection_rng.choice(
@@ -436,6 +448,8 @@ def run_simulation(
     selective_method_name = (
         f"Selective {selector_display} (conditional MC)"
         if inference_method == "conditional_mc"
+        else f"Selective {selector_display} (reversible MCMC rank)"
+        if inference_method == "mcmc_rank"
         else f"Selective {selector_display} (approximate AIS)"
     )
     selective_summary, selective_flat = _method_summary(
@@ -487,6 +501,9 @@ def run_simulation(
             "max_final_samples": max_final_samples,
             "min_denominator_ess": min_denominator_ess,
             "min_tail_ess": min_tail_ess,
+            "mcmc_steps": mcmc_steps,
+            "mcmc_step_scales": tuple(mcmc_step_scales),
+            "mcmc_global_jump_probability": mcmc_global_jump_probability,
             "p_value_scale": (
                 "raw" if multiplicity == "none" else "multiplicity_adjusted"
             ),

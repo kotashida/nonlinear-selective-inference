@@ -1,6 +1,6 @@
 # Selective Inference After Feature Selection
 
-This project performs selective inference after deterministic top-$k$ feature selection. It includes Random Forest Tree SHAP, mutual-information screening, marginal-correlation screening, and cubic B-spline screening; chi tests for B-spline effects; finite-sample-valid conditional Monte Carlo rank $p$ values; explicitly exploratory Adaptive Importance Sampling (AIS); and selection-region visualization.
+This project performs selective inference after deterministic top-$k$ feature selection. It includes Random Forest Tree SHAP, mutual-information screening, marginal-correlation screening, and cubic B-spline screening; chi tests for B-spline effects; finite-sample-valid direct and reversible-MCMC rank $p$ values; explicitly exploratory Adaptive Importance Sampling (AIS); and selection-region visualization.
 
 ## Real-data API and statistical scope
 
@@ -64,6 +64,21 @@ finite-sample valid and becomes conservatively equal to one when no proposal
 reproduces selection. `inference_method="ais"` retains the self-normalized AIS
 ratio as an explicitly approximate exploratory estimate; it is not an exact
 finite-sample p-value, even when ESS diagnostics are satisfactory.
+
+For rare selection events, use `inference_method="mcmc_rank"`. It draws a
+reversible-chain hub from the observed statistic and parallel reversible-chain
+replicates from that hub. Conditional exchangeability gives a finite-sample-valid
+upper-rank p-value, while avoiding the direct method's need to rediscover the
+rare event from unconditional chi draws. `max_final_samples` is the number of
+rank replicates and `mcmc_steps` is the fixed transition length; mixing affects
+power and diagnostics, not the rank test's validity.
+
+The result also records `minimum_attainable_p_value = 1 / (selected + 1)`.
+Power summaries flag a signal test as resolution-limited whenever that value is
+not below the experiment's alpha. Such a row is still a valid conservative
+test, but it is not evidence that the well-resolved selective test has low
+power. Validation therefore reports resolution lower/upper bounds and cannot
+pass while any signal-target test is resolution-limited.
 
 By default, for `k_select=k` the API draws one auxiliary
 `u ~ Uniform(0,1)`, maps the canonically sorted selected set to one target, and

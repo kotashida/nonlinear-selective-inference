@@ -17,6 +17,7 @@ from si_shap.inference import (
     _run_ais,
     _run_conditional_mc,
     _run_exact_spline,
+    _run_mcmc_rank,
     _spline_effect_basis,
     _spline_exact_set_intervals,
     _truncated_normal_logpdf,
@@ -97,6 +98,21 @@ def test_conditional_mc_returns_valid_one_when_event_is_not_resampled():
     assert p_value == 1.0
     assert diagnostics["status"] == "ok"
     assert diagnostics["resolution_status"] == "no_selected_mc_draws_p_equals_one"
+    assert diagnostics["minimum_attainable_p_value"] == 1.0
+
+
+def test_conditional_mc_reports_smallest_rank_p_value_supported_by_draws():
+    _, diagnostics = _run_conditional_mc(
+        10.0,
+        3,
+        lambda _z: True,
+        np.random.default_rng(9),
+        batch_size=19,
+        n_proposals=19,
+    )
+
+    assert diagnostics["selected_samples"] == 19
+    assert diagnostics["minimum_attainable_p_value"] == 0.05
 
 
 def test_conditional_mc_is_calibrated_for_an_analytic_selected_chi_law():
@@ -116,6 +132,45 @@ def test_conditional_mc_is_calibrated_for_an_analytic_selected_chi_law():
         rejections.append(p_value <= 0.05)
 
     assert np.mean(rejections) <= 0.07
+
+
+def test_mcmc_rank_is_calibrated_for_rare_truncated_chi_event():
+    rng = np.random.default_rng(991)
+    lower_cdf = stats.chi.cdf(4.0, df=3)
+    rejections = []
+    for _ in range(400):
+        t_obs = stats.chi.ppf(rng.uniform(lower_cdf, 1.0), df=3)
+        p_value, diagnostics = _run_mcmc_rank(
+            t_obs,
+            3,
+            lambda z: z >= 4.0,
+            rng,
+            n_replicates=99,
+            n_steps=20,
+        )
+        rejections.append(p_value < 0.05)
+        assert diagnostics["finite_sample_valid"] is True
+
+    assert np.mean(rejections) <= 0.07
+
+
+def test_mcmc_rank_resolves_a_rare_upper_selection_event():
+    t_obs = 7.0
+    expected = stats.chi.sf(t_obs, df=3) / stats.chi.sf(4.0, df=3)
+
+    p_value, diagnostics = _run_mcmc_rank(
+        t_obs,
+        3,
+        lambda z: z >= 4.0,
+        np.random.default_rng(812),
+        n_replicates=999,
+        n_steps=40,
+    )
+
+    assert p_value < 0.05
+    assert abs(p_value - expected) < 0.02
+    assert diagnostics["mcmc_moved_replicas"] > 0
+    assert diagnostics["mcmc_unique_replicas"] > 10
 
 
 def test_spline_basis_is_centered_and_orthonormal():

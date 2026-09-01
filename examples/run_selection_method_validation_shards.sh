@@ -11,7 +11,7 @@ cd "$PROJECT_ROOT"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_method_validation_seed_20260821_shards}"
 PRESET="${PRESET:-comprehensive}"
-METHODS="${METHODS:-shap mutual_information marginal_screening}"
+METHODS="${METHODS:-shap spline_screening mutual_information}"
 DESIGNS="${DESIGNS:-baseline correlated}"
 AUXILIARY_VALUES="${AUXILIARY_VALUES:-fresh}"
 SIGNAL_STRENGTHS="${SIGNAL_STRENGTHS:-0.30 0.50 0.75 1.00}"
@@ -27,17 +27,32 @@ RF_JOBS="${RF_JOBS:-3}"
 BASE_SEED="${BASE_SEED:-20260821}"
 DESIGN_SEED="${DESIGN_SEED:-314159}"
 MC_PROPOSALS="${MC_PROPOSALS:-800}"
+INFERENCE_METHOD="${INFERENCE_METHOD:-mcmc_rank}"
+SPLINE_INFERENCE_METHOD="${SPLINE_INFERENCE_METHOD:-inherit}"
+MCMC_STEPS="${MCMC_STEPS:-20}"
 MIN_CALIBRATION_ITERS="${MIN_CALIBRATION_ITERS:-5000}"
 MIN_SIGNAL_TARGETS="${MIN_SIGNAL_TARGETS:-300}"
 MIN_CONDITIONAL_POWER="${MIN_CONDITIONAL_POWER:-0.80}"
 
-for name in TOTAL_NULL_ITERS TOTAL_POWER_ITERS N_SHARDS PARALLEL_SHARDS CPU_BUDGET RF_JOBS; do
+for name in TOTAL_NULL_ITERS TOTAL_POWER_ITERS N_SHARDS PARALLEL_SHARDS CPU_BUDGET RF_JOBS MC_PROPOSALS MCMC_STEPS MIN_CALIBRATION_ITERS MIN_SIGNAL_TARGETS; do
   value="${!name}"
   if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
     echo "$name must be a positive integer" >&2
     exit 2
   fi
 done
+if [[ "$INFERENCE_METHOD" != "conditional_mc" && "$INFERENCE_METHOD" != "mcmc_rank" ]]; then
+  echo "INFERENCE_METHOD must be conditional_mc or mcmc_rank." >&2
+  exit 2
+fi
+if [[ "$SPLINE_INFERENCE_METHOD" != "inherit" && "$SPLINE_INFERENCE_METHOD" != "exact_spline" ]]; then
+  echo "SPLINE_INFERENCE_METHOD must be inherit or exact_spline." >&2
+  exit 2
+fi
+if [[ "$SPLINE_INFERENCE_METHOD" == "exact_spline" && "$SELECTION_EVENTS" != "exact_set" ]]; then
+  echo "SPLINE_INFERENCE_METHOD=exact_spline requires SELECTION_EVENTS=exact_set." >&2
+  exit 2
+fi
 if (( TOTAL_NULL_ITERS < N_SHARDS || TOTAL_POWER_ITERS < N_SHARDS )); then
   echo "Each total iteration count must be at least N_SHARDS." >&2
   exit 2
@@ -65,6 +80,9 @@ trap 'rm -f "$requested_config"' EXIT
   printf 'BASE_SEED=%s\n' "$BASE_SEED"
   printf 'DESIGN_SEED=%s\n' "$DESIGN_SEED"
   printf 'MC_PROPOSALS=%s\n' "$MC_PROPOSALS"
+  printf 'INFERENCE_METHOD=%s\n' "$INFERENCE_METHOD"
+  printf 'SPLINE_INFERENCE_METHOD=%s\n' "$SPLINE_INFERENCE_METHOD"
+  printf 'MCMC_STEPS=%s\n' "$MCMC_STEPS"
   printf 'MIN_CALIBRATION_ITERS=%s\n' "$MIN_CALIBRATION_ITERS"
   printf 'MIN_SIGNAL_TARGETS=%s\n' "$MIN_SIGNAL_TARGETS"
   printf 'MIN_CONDITIONAL_POWER=%s\n' "$MIN_CONDITIONAL_POWER"
@@ -119,6 +137,9 @@ run_shard() {
     --n-null-iters "$null_iters" \
     --n-power-iters "$power_iters" \
     --max-final-samples "$MC_PROPOSALS" \
+    --inference-method "$INFERENCE_METHOD" \
+    --spline-inference-method "$SPLINE_INFERENCE_METHOD" \
+    --mcmc-steps "$MCMC_STEPS" \
     --minimum-calibration-iterations "$MIN_CALIBRATION_ITERS" \
     --minimum-signal-targets "$MIN_SIGNAL_TARGETS" \
     --minimum-conditional-power "$MIN_CONDITIONAL_POWER" \
@@ -136,6 +157,8 @@ export SIGNAL_STRENGTHS SIGNAL_POSITIONS TOTAL_NULL_ITERS TOTAL_POWER_ITERS
 export SELECTION_EVENTS
 export PRIMARY_SELECTION_EVENT
 export N_SHARDS BASE_SEED DESIGN_SEED MC_PROPOSALS MIN_CALIBRATION_ITERS
+export INFERENCE_METHOD MCMC_STEPS
+export SPLINE_INFERENCE_METHOD
 export MIN_SIGNAL_TARGETS MIN_CONDITIONAL_POWER RF_JOBS
 
 seq 0 $((N_SHARDS - 1)) | xargs -n 1 -P "$PARALLEL_SHARDS" bash -c 'run_shard "$1"' _
