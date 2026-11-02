@@ -22,19 +22,25 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_K2_SUMMARY = (
     PROJECT_ROOT
     / "outputs"
-    / "variable_size_selection_event_counterexample"
+    / "selection_event_comparison"
+    / "variable_size"
+    / "k_2"
     / "calibration_summary.csv"
 )
 DEFAULT_K5_SUMMARY = (
     PROJECT_ROOT
     / "outputs"
-    / "variable_size_selection_event_counterexample_k5"
+    / "selection_event_comparison"
+    / "variable_size"
+    / "k_5"
     / "calibration_summary.csv"
 )
 DEFAULT_OUTPUT = (
     PROJECT_ROOT
     / "outputs"
-    / "variable_size_selection_event_counterexample_k_comparison"
+    / "selection_event_comparison"
+    / "variable_size"
+    / "comparison"
     / "rejection_rates_k2_k5_without_weighted.png"
 )
 METHODS = ("feature_inclusion", "same_target", "exact_set")

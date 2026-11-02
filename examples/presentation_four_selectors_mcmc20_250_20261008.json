@@ -1,0 +1,78 @@
+{
+  "experiment": "presentation_four_selectors_mcmc20_250_20261008",
+  "output_root": "outputs/selection_method_validation/exact_set/presentation_four_selectors_mcmc20_250_20261008",
+  "workers": 32,
+  "shards": 32,
+  "base_seed": 2026100801,
+  "iterations": 250,
+  "betas": [
+    0,
+    0.25,
+    0.5,
+    0.75,
+    1
+  ],
+  "design": {
+    "n_samples": 100,
+    "n_features": 20,
+    "k_select": 2,
+    "feature_correlation": 0
+  },
+  "sigma": 1,
+  "alpha": 0.05,
+  "selection_event": "exact_set",
+  "target_rule": "uniform_from_selected",
+  "multiplicity": "none",
+  "selection_decimals": 10,
+  "rf_params": {
+    "n_estimators": 50,
+    "max_depth": 5,
+    "random_state": 42,
+    "n_jobs": 1
+  },
+  "lime": {
+    "random_state": 42,
+    "num_samples": 64,
+    "num_explanations": 40,
+    "kernel_width": null,
+    "ridge_alpha": 1
+  },
+  "mutual_information": {
+    "random_state": 42,
+    "n_neighbors": 30,
+    "estimator": "kde",
+    "n_bins": 5,
+    "bandwidth": 2.5
+  },
+  "methods": [
+    "shap",
+    "lime",
+    "spline_screening",
+    "mutual_information"
+  ],
+  "mcmc": {
+    "construction": "parallel",
+    "replicas": 511,
+    "steps": 20,
+    "step_scales": [
+      0.25,
+      0.5,
+      1,
+      2
+    ],
+    "global_jump_probability": 0.1
+  },
+  "presentation": {
+    "file": "presentation/261005_si_rd/presentation.pdf",
+    "sha256": "b65faf0d2fb6b54374b5f5d3a5d6be189961083187e2b6532d5bdfd66a4741b6",
+    "selector_parameter_source": "Presentation-referenced September 28 null run configuration"
+  },
+  "intentional_differences": [
+    "250 trials per method per condition; beta 0.25 replaces presentation beta 0.30.",
+    "All four distinct selectors use parallel reversible MCMC rank inference, replacing AIS/exact inference. Spline selector appears once.",
+    "Null X and y are redrawn each trial, matching the main null slide; unlike the later fixed-X Shapley experiment.",
+    "Shared fresh X,y and auxiliary target draws across all four methods. Targets may differ because selected sets differ.",
+    "511 replicas and 20 steps require 10240 transitions per test; no AIS pilot or ESS stopping.",
+    "Linear RSS Shapley excluded at user request; all four selectors retain the matching spline projection test."
+  ]
+}

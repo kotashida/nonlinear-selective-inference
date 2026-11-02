@@ -1,4 +1,4 @@
-"""Compare SHAP selection regions across conditioning, top-k, and forest settings.
+"""Compare SHAP or LIME selection regions across top-k and forest settings.
 
 The quick preset is intended as a smoke test.  The recommended preset runs
 the compact comparison matrix described in the project README.  Every
@@ -28,8 +28,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
 
 from si_shap import (
+    LimeSelector,
     compute_selection_regions,
     plot_selection_regions,
     selection_regions_frame,
@@ -115,6 +117,42 @@ def parse_args(argv=None):
         help="conditioning modes; overrides the selected preset",
     )
     parser.add_argument(
+        "--selection-method",
+        choices=("shap", "lime"),
+        default="shap",
+        help="feature-selection method to scan (default: shap)",
+    )
+    parser.add_argument(
+        "--proposal-pilot-iters",
+        type=int,
+        default=3,
+        help="adaptive-proposal pilot rounds (default: 3)",
+    )
+    parser.add_argument(
+        "--proposal-pilot-samples",
+        type=int,
+        default=40,
+        help="samples per adaptive-proposal pilot round (default: 40)",
+    )
+    parser.add_argument(
+        "--lime-num-explanations",
+        type=int,
+        default=40,
+        help="explanation rows used by LIME (default: 40)",
+    )
+    parser.add_argument(
+        "--lime-num-samples",
+        type=int,
+        default=64,
+        help="neighborhood samples per LIME explanation (default: 64)",
+    )
+    parser.add_argument(
+        "--lime-ridge-alpha",
+        type=float,
+        default=1.0,
+        help="LIME weighted-ridge penalty (default: 1)",
+    )
+    parser.add_argument(
         "--grid-size",
         type=int,
         default=1001,
@@ -137,7 +175,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "outputs" / "selection_region_sweep",
+        default=PROJECT_ROOT / "outputs" / "selection_regions" / "sweep",
         help="root directory for sweep results",
     )
     return parser.parse_args(argv)
@@ -163,11 +201,24 @@ def run_experiment(args, k_select, rf_name, selection_event):
         "random_state": 42,
         "n_jobs": args.n_jobs,
     }
-    experiment_name = f"k{k_select}_{rf_name}_{selection_event}"
+    method_prefix = "" if args.selection_method == "shap" else "lime_"
+    experiment_name = (
+        f"{method_prefix}k{k_select}_{rf_name}_{selection_event}"
+    )
     experiment_directory = args.output_dir / experiment_name
     experiment_directory.mkdir(parents=True, exist_ok=True)
 
     print(f"Running {experiment_name}: {rf_params}", flush=True)
+    selector = None
+    if args.selection_method == "lime":
+        selector = LimeSelector(
+            RandomForestRegressor(**rf_params),
+            selection_decimals=10,
+            random_state=42,
+            num_samples=args.lime_num_samples,
+            num_explanations=args.lime_num_explanations,
+            ridge_alpha=args.lime_ridge_alpha,
+        )
     results = compute_selection_regions(
         dataset_seeds=args.dataset_seeds,
         n_samples=100,
@@ -178,7 +229,11 @@ def run_experiment(args, k_select, rf_name, selection_event):
         grid_refinements=args.grid_refinements,
         boundary_tol=1e-8,
         tail_probability=1e-8,
-        rf_params=rf_params,
+        proposal_pilot_iters=args.proposal_pilot_iters,
+        proposal_pilot_samples=args.proposal_pilot_samples,
+        selection_method=("shap" if selector is None else None),
+        rf_params=(rf_params if selector is None else None),
+        selector=selector,
         selection_event=selection_event,
         target_rule=(
             "uniform_from_selected"
@@ -191,6 +246,13 @@ def run_experiment(args, k_select, rf_name, selection_event):
     summary.insert(0, "experiment", experiment_name)
     summary.insert(1, "rf_config", rf_name)
     summary.insert(2, "rf_params", json.dumps(rf_params, sort_keys=True))
+    summary.insert(3, "selection_method", args.selection_method)
+    summary.insert(4, "proposal_pilot_iters", args.proposal_pilot_iters)
+    summary.insert(5, "proposal_pilot_samples", args.proposal_pilot_samples)
+    if args.selection_method == "lime":
+        summary.insert(6, "selector_settings", json.dumps(
+            selector.get_settings(), sort_keys=True
+        ))
     # The region scan can be long-running, so ensure the output directory still
     # exists at the point of writing (for example, after external cleanup).
     experiment_directory.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,31 @@
+{
+  "experiment": "mi_cpu_sweep_1000_20260920",
+  "output_root": "outputs/selection_method_validation/exact_set/mi_parameter_tuning/mi_cpu_sweep_1000_20260920",
+  "environment": {
+    "PRESET": "comprehensive", "METHODS": "mutual_information", "DESIGNS": "baseline",
+    "AUXILIARY_VALUES": "fresh", "SIGNAL_STRENGTHS": "0.30 0.50 0.75 1.00", "SIGNAL_POSITIONS": "first",
+    "SELECTION_EVENTS": "exact_set", "PRIMARY_SELECTION_EVENT": "exact_set",
+    "TOTAL_NULL_ITERS": "1000", "TOTAL_POWER_ITERS": "1000",
+    "N_SHARDS": "32", "PARALLEL_SHARDS": "32", "CPU_BUDGET": "32", "RF_JOBS": "1",
+    "BASE_SEED": "20260908", "DESIGN_SEED": "314159",
+    "INFERENCE_METHOD": "ais", "SPLINE_INFERENCE_METHOD": "inherit", "MCMC_STEPS": "20",
+    "MC_PROPOSALS": "51200", "AIS_PILOT_ITERS": "10", "AIS_PILOT_SAMPLES": "320",
+    "AIS_FINAL_BATCH_SIZE": "800", "AIS_MIN_DENOMINATOR_ESS": "80", "AIS_MIN_TAIL_ESS": "15",
+    "AIS_STOP_WHEN_ESS_MET": "true", "AIS_STRATEGY": "a_robust_draw_floor",
+    "MI_BINS": "5", "LIME_RIDGE_ALPHA": "1", "LIME_KERNEL_WIDTH": "", "LIME_NUM_EXPLANATIONS": "10",
+    "MIN_CALIBRATION_ITERS": "200", "MIN_SIGNAL_TARGETS": "30", "MIN_CONDITIONAL_POWER": "0.80"
+  },
+  "design": {"n_samples": 100, "n_features": 20, "k_select": 2, "feature_correlation": 0.0},
+  "configurations": [
+    {"name": "knn_30", "estimator": "knn", "neighbors": 30, "bandwidth": 1.0},
+    {"name": "knn_12", "estimator": "knn", "neighbors": 12, "bandwidth": 1.0},
+    {"name": "knn_20", "estimator": "knn", "neighbors": 20, "bandwidth": 1.0},
+    {"name": "knn_25", "estimator": "knn", "neighbors": 25, "bandwidth": 1.0},
+    {"name": "kde_1", "estimator": "kde", "neighbors": 30, "bandwidth": 1.0},
+    {"name": "kde_1p25", "estimator": "kde", "neighbors": 30, "bandwidth": 1.25},
+    {"name": "kde_1p5", "estimator": "kde", "neighbors": 30, "bandwidth": 1.5},
+    {"name": "kde_1p75", "estimator": "kde", "neighbors": 30, "bandwidth": 1.75},
+    {"name": "kde_2", "estimator": "kde", "neighbors": 30, "bandwidth": 2.0},
+    {"name": "kde_2p5", "estimator": "kde", "neighbors": 30, "bandwidth": 2.5}
+  ]
+}

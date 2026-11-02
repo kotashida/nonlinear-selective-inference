@@ -1,0 +1,5 @@
+{
+  "ais_strategy": "a_robust_floor_multimodal_denominator",
+  "reference": "outputs/selection_method_validation/exact_set/selected_five_methods_combined_ais_exact_mi30",
+  "output": "outputs/selection_method_validation/exact_set/selected_five_methods_robust_floor_multimodal_denominator_ais_exact_mi30"
+}

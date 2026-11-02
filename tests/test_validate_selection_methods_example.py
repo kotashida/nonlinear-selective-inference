@@ -214,6 +214,8 @@ def test_validation_cli_accepts_shared_design_and_rf_worker_limits():
             "99",
             "--rf-jobs",
             "3",
+            "--mi-neighbors",
+            "12",
             "--auxiliary-values",
             "fresh",
             "0.75",
@@ -230,6 +232,7 @@ def test_validation_cli_accepts_shared_design_and_rf_worker_limits():
 
     assert args.design_seed == 99
     assert args.rf_jobs == 3
+    assert args.mi_neighbors == 12
     assert args.auxiliary_values == [None, 0.75]
     assert args.signal_strengths == [0.5]
     assert args.signal_positions == ["first"]
@@ -254,6 +257,25 @@ def test_validation_cli_accepts_exact_set_only():
     assert args.primary_selection_event == "exact_set"
 
 
+def test_validation_cli_accepts_linear_shapley():
+    args = validation.parse_args(["--methods", "linear_shapley"])
+
+    assert args.methods == ["linear_shapley"]
+
+
+def test_mutual_information_selector_arguments_use_requested_neighbors():
+    arguments = validation._selector_arguments("mutual_information", 12)
+
+    assert arguments["selection_method"] is None
+    assert arguments["selector"].n_neighbors == 12
+
+
+def test_non_mi_selector_arguments_keep_named_method():
+    arguments = validation._selector_arguments("shap", 12)
+
+    assert arguments == {"selection_method": "shap", "selector": None}
+
+
 def test_validation_cli_accepts_exact_spline_override():
     args = validation.parse_args(
         [
@@ -267,6 +289,36 @@ def test_validation_cli_accepts_exact_spline_override():
     )
 
     assert args.spline_inference_method == "exact_spline"
+
+
+def test_validation_cli_accepts_explicit_fixed_budget_ais_settings():
+    args = validation.parse_args(
+        [
+            "--inference-method",
+            "ais",
+            "--pilot-iters",
+            "3",
+            "--pilot-samples",
+            "40",
+            "--final-batch-size",
+            "1600",
+            "--max-final-samples",
+            "1600",
+            "--min-denominator-ess",
+            "80",
+            "--min-tail-ess",
+            "15",
+        ]
+    )
+
+    assert args.inference_method == "ais"
+    assert args.pilot_iters == 3
+    assert args.pilot_samples == 40
+    assert args.final_batch_size == 1600
+    assert args.max_final_samples == 1600
+    assert args.min_denominator_ess == 80.0
+    assert args.min_tail_ess == 15.0
+    assert not args.stop_when_ess_met
 
 
 def test_exact_spline_override_only_changes_spline_screening():

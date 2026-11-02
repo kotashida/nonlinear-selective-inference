@@ -1,0 +1,119 @@
+{
+  "independent_coalition_matrix_max_error": 2.220446049250313e-16,
+  "p20_ranks": [
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20
+  ],
+  "p20_smallest_reduced_eigenvalue": 0.00006125900137428257,
+  "p20_efficiency_error": 3.3306690738754696e-16,
+  "p20_ray_selected_sets_unchanged": true,
+  "correlated_examples": [
+    {
+      "rho": 0,
+      "rank2": 1,
+      "score2_mean": 2.884758250275222e-31,
+      "expected": 0,
+      "eigenvalues2": [
+        2.1619643118159054e-33,
+        1
+      ]
+    },
+    {
+      "rho": 0.7,
+      "rank2": 2,
+      "score2_mean": 8.819999999999991,
+      "expected": 8.819999999999999,
+      "eigenvalues2": [
+        0.14292857857285743,
+        0.8570714214271427
+      ]
+    },
+    {
+      "rho": 0.00001,
+      "rank2": 2,
+      "score2_mean": 1.8000019252895072e-9,
+      "expected": 1.8000000000000002e-9,
+      "eigenvalues2": [
+        2.5000057579660506e-11,
+        0.9999999999749998
+      ]
+    },
+    {
+      "rho": 1e-8,
+      "rank2": 1,
+      "score2_mean": 3.552713678800501e-15,
+      "expected": 1.8e-15,
+      "eigenvalues2": [
+        5.551115123125783e-17,
+        1
+      ]
+    }
+  ],
+  "one_permutation_ranks": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "orthogonal_top1": {
+    "exact_p": 0.14339349869880835,
+    "conditional_mc_p": 0.1419239345497943,
+    "retained": 31840
+  },
+  "constant_decimal_bug": {
+    "column_value": 0.1,
+    "mean_computed": 0.09999999999999998,
+    "score": 99.99999999999993,
+    "rank": 1,
+    "expected_score": 0
+  },
+  "saved_data_hashes_match": {
+    "ais": true,
+    "exact": true
+  },
+  "saved_exact_checks": {
+    "n": 1500,
+    "all_target_ranks20": true,
+    "p_formula_error": 1.1102230246251565e-16,
+    "changed_5pct": 12,
+    "max_ais_absolute_error": 0.0634808584901484
+  },
+  "saved_all_proposals_selected": true,
+  "saved_null_design_seeds": [
+    3405814020
+  ],
+  "saved_null_fixed_within_shards": true,
+  "current_vs_saved_source_hashes": {
+    "src/si_shap/linear_shapley.py": true,
+    "src/si_shap/selection.py": true,
+    "src/si_shap/api.py": true,
+    "src/si_shap/inference.py": false,
+    "src/si_shap/power.py": false,
+    "src/si_shap/null_calibration.py": false
+  },
+  "existing_tests": {
+    "linear_shapley": 17,
+    "inference": 14,
+    "api": 21,
+    "total": 52,
+    "all_passed": true
+  }
+}

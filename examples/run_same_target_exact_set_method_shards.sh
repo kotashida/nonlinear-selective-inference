@@ -9,7 +9,8 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/same_target_vs_exact_set}"
+K_SELECT="${K_SELECT:-5}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_event_comparison/same_target_vs_exact_set/k_${K_SELECT}}"
 METHODS="${METHODS:-shap spline_screening marginal_screening}"
 TOTAL_ITERS="${TOTAL_ITERS:-1000}"
 N_SHARDS="${N_SHARDS:-10}"
@@ -18,7 +19,6 @@ CPU_BUDGET="${CPU_BUDGET:-32}"
 RF_JOBS="${RF_JOBS:-3}"
 BASE_SEED="${BASE_SEED:-20260828}"
 DESIGN_SEED="${DESIGN_SEED:-144269559}"
-K_SELECT="${K_SELECT:-5}"
 
 for name in TOTAL_ITERS N_SHARDS PARALLEL_SHARDS CPU_BUDGET RF_JOBS K_SELECT; do
   value="${!name}"

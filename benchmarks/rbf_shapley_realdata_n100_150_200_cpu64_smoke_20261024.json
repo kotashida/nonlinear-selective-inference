@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "experiment": "rbf_shapley_realdata_n100_150_200_cpu64_smoke_20261024",
+  "output_root": "outputs/benchmarks/rbf_shapley_realdata_n100_150_200_cpu64_smoke_20261024",
+  "smoke": true,
+  "workers": 2,
+  "threads_per_worker": 1,
+  "repetitions": 2,
+  "batch_size": 1,
+  "sample_sizes": [
+    100,
+    150,
+    200
+  ],
+  "datasets": [
+    "red_wine",
+    "housing"
+  ],
+  "k": 2,
+  "sigma": 1.0,
+  "alpha_levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "primary_alpha": 0.05,
+  "seed": 2026102402,
+  "targets": [
+    "selected_shapley",
+    "full_shapley"
+  ],
+  "basis": "additive_rbf",
+  "rbf_units": 3,
+  "center_quantiles": [
+    0.2,
+    0.5,
+    0.8
+  ],
+  "width_multiplier": 1.0,
+  "selection": "exact_full_coalition_rbf_rss_shapley",
+  "selection_event": "exact_set",
+  "target_rule": "uniform_from_sorted_selected_set",
+  "inference": "analytic_truncated_chi",
+  "matching": "nested_uniform_row_subsamples_and_shared_auxiliary_uniform",
+  "rank_tolerance": 1e-10,
+  "input_path": "benchmarks/table_dataset.pkl",
+  "input_sha256": "9f2276d10cfa1110929429361f505627133359012446aa78016ea55ba9805729",
+  "preprocessing": "existing_full_dataset_standardization_and_documented_jitter_no_rescaling",
+  "required_versions": {
+    "numpy": "1.26.4",
+    "scipy": "1.17.1",
+    "threadpoolctl": "3.6.0"
+  },
+  "verification_repetitions": [
+    0,
+    1
+  ]
+}

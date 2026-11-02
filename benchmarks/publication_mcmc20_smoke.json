@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "experiment": "publication_five_mcmc20_smoke_v2_20261009",
+  "output_root": "outputs/benchmarks/publication_five_mcmc20_smoke_v2_20261009",
+  "master_seed": 2026100901,
+  "workers": 2,
+  "smoke": true,
+  "reference": "benchmarks/publication_mcmc_reference.json",
+  "reference_sha256": "e0a0cc6d65ef4c611ca582c8bb59b00fcd91477594ddf34dad55aa4379a89d86",
+  "methods": [
+    "shap_mcmc",
+    "lime_mcmc",
+    "spline_mcmc",
+    "mutual_information_mcmc",
+    "spline_exact"
+  ],
+  "alpha_levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "primary_alpha": 0.05,
+  "rejection_rule": "p < alpha",
+  "sigma": 1.0,
+  "bootstrap_replicates": 50,
+  "bootstrap_seed": 2026100902,
+  "calibration_tolerance": 0.01,
+  "prepared_root": "benchmarks/publication_mcmc_data",
+  "null_conditions": [
+    {
+      "id": "iid_n100",
+      "n": 100,
+      "p": 20,
+      "rho": 0,
+      "repetitions": 2,
+      "primary": true
+    }
+  ],
+  "real_datasets": [
+    "heating_load"
+  ],
+  "real_conditions": [
+    {
+      "id": "observed_n100",
+      "mode": "observed",
+      "n": 100,
+      "beta": null,
+      "repetitions": 1,
+      "primary": true
+    },
+    {
+      "id": "gaussian_null_n100",
+      "mode": "gaussian_null",
+      "n": 100,
+      "beta": 0,
+      "repetitions": 1,
+      "primary": true
+    },
+    {
+      "id": "gaussian_signal_b05_n100",
+      "mode": "gaussian_signal",
+      "n": 100,
+      "beta": 0.5,
+      "repetitions": 1,
+      "primary": true
+    }
+  ],
+  "smoke_mcmc": {
+    "replicas": 7,
+    "steps": 2
+  }
+}

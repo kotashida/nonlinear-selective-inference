@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "experiment": "rbf_ridge_cv_n25_50_75_smoke_cpu32_20261028",
+  "output_root": "outputs/benchmarks/rbf_ridge_cv_n25_50_75_smoke_cpu32_20261028",
+  "smoke": true,
+  "workers": 2,
+  "threads_per_worker": 1,
+  "batch_size": 1,
+  "sample_sizes": [
+    25,
+    50,
+    75
+  ],
+  "p": 4,
+  "k": 2,
+  "sigma": 1.0,
+  "primary_alpha": 0.05,
+  "alpha_levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "primary_fraction": 0.1,
+  "synthetic_fractions": [
+    0.05,
+    0.1,
+    0.2
+  ],
+  "null_iterations": 2,
+  "power_iterations": 2,
+  "real_iterations": 2,
+  "betas": [
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "datasets": [
+    "red_wine",
+    "housing"
+  ],
+  "seed": 2026102801,
+  "targets": [
+    "selected_shapley",
+    "full_shapley"
+  ],
+  "lambdas": [
+    1e-06,
+    1e-05,
+    0.0001,
+    0.001,
+    0.01,
+    0.1,
+    1.0,
+    10.0,
+    100.0
+  ],
+  "cv_folds": 5,
+  "cv_score": "pooled_validation_mse_full_model",
+  "objective": "RSS/n + lambda*sum_nonintercept_beta_squared",
+  "coalition_score": "improvement_in_minimized_RSS_plus_n_lambda_penalty",
+  "selection_event": "joint_cv_winner_and_exact_topk_set",
+  "centers": "shared_random_training_rows_without_replacement_ceil_fraction_n",
+  "widths": "median_pairwise_absolute_distance_positive_fallback",
+  "rank_tolerance": 1e-10,
+  "null_tolerance": 1e-09,
+  "input_path": "benchmarks/table_dataset.pkl",
+  "input_sha256": "9f2276d10cfa1110929429361f505627133359012446aa78016ea55ba9805729",
+  "required_versions": {
+    "numpy": "1.26.4",
+    "scipy": "1.17.1",
+    "threadpoolctl": "3.6.0",
+    "matplotlib": "3.11.0"
+  },
+  "verification_repetitions": "first_and_last_each_section_dataset_n_fraction",
+  "matching": "nested_n_shared_X_noise_across_beta_fraction_shared_auxiliary_u"
+}

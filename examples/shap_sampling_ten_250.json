@@ -1,0 +1,140 @@
+{
+  "experiment": "shap_sampling_ten_250_20260928",
+  "output_root": "outputs/selection_method_validation/exact_set/shap_sampling_ten_250_20260928",
+  "iterations_per_condition": 250,
+  "workers": 32,
+  "shards": 32,
+  "base_seed": 2026092801,
+  "design_seed": 314159,
+  "alpha": 0.05,
+  "betas": [
+    0.75,
+    1.0
+  ],
+  "design": {
+    "n_samples": 100,
+    "n_features": 20,
+    "k_select": 2,
+    "feature_correlation": 0.0
+  },
+  "rf_params": {
+    "n_estimators": 50,
+    "max_depth": 5,
+    "random_state": 42,
+    "n_jobs": 1
+  },
+  "shared": {
+    "pilot_samples": 320,
+    "final_batch_size": 800,
+    "min_denominator_ess": 80.0,
+    "min_tail_ess": 15.0,
+    "mcmc_step_scales": [
+      0.25,
+      0.5,
+      1.0,
+      2.0
+    ]
+  },
+  "arms": [
+    {
+      "name": "test_01",
+      "inference_method": "ais",
+      "ais_strategy": "a_robust_draw_floor",
+      "pilot_iters": 10,
+      "max_final_samples": 51200,
+      "mcmc_steps": 20,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 1
+    },
+    {
+      "name": "test_02",
+      "inference_method": "ais",
+      "ais_strategy": "a_robust_draw_floor",
+      "pilot_iters": 10,
+      "max_final_samples": 102400,
+      "mcmc_steps": 20,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 2
+    },
+    {
+      "name": "test_03",
+      "inference_method": "ais",
+      "ais_strategy": "a_robust_draw_floor_pilot15",
+      "pilot_iters": 15,
+      "max_final_samples": 51200,
+      "mcmc_steps": 20,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 3
+    },
+    {
+      "name": "test_04",
+      "inference_method": "ais",
+      "ais_strategy": "a_cdf_interval",
+      "pilot_iters": 10,
+      "max_final_samples": 51200,
+      "mcmc_steps": 20,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 4
+    },
+    {
+      "name": "test_05",
+      "inference_method": "ais",
+      "ais_strategy": "a_robust_floor_multimodal_denominator",
+      "pilot_iters": 10,
+      "max_final_samples": 51200,
+      "mcmc_steps": 20,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 5
+    },
+    {
+      "name": "test_06",
+      "inference_method": "ais",
+      "ais_strategy": "a_full_stack_optimized",
+      "pilot_iters": 15,
+      "max_final_samples": 51200,
+      "mcmc_steps": 20,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 6
+    },
+    {
+      "name": "test_07",
+      "inference_method": "ais",
+      "ais_strategy": "a_robust_draw_floor_tail_stable",
+      "pilot_iters": 10,
+      "max_final_samples": 51200,
+      "mcmc_steps": 20,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 7
+    },
+    {
+      "name": "test_08",
+      "inference_method": "mcmc_rank",
+      "ais_strategy": "baseline",
+      "pilot_iters": 10,
+      "max_final_samples": 511,
+      "mcmc_steps": 20,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 8
+    },
+    {
+      "name": "test_09",
+      "inference_method": "mcmc_rank",
+      "ais_strategy": "baseline",
+      "pilot_iters": 10,
+      "max_final_samples": 511,
+      "mcmc_steps": 100,
+      "mcmc_global_jump_probability": 0.1,
+      "sampler_seed_salt": 9
+    },
+    {
+      "name": "test_10",
+      "inference_method": "mcmc_rank",
+      "ais_strategy": "baseline",
+      "pilot_iters": 10,
+      "max_final_samples": 511,
+      "mcmc_steps": 100,
+      "mcmc_global_jump_probability": 0.3,
+      "sampler_seed_salt": 10
+    }
+  ]
+}

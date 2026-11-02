@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fixed-u counterpart of outputs/null_calibration_seed_123_shards.
+# Fixed-u counterpart of outputs/null_calibration/random_u_seed_123.
 # Override any setting through the environment, for example:
 #   PARALLEL_SHARDS=16 N_SHARDS=20 ITERS_PER_SHARD=100 bash \
 #     examples/run_fixed_u_null_calibration_shards.sh
@@ -10,7 +10,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/null_calibration_fixed_u_0p75_shards}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/null_calibration/fixed_u_0p75}"
 N_SHARDS="${N_SHARDS:-10}"
 ITERS_PER_SHARD="${ITERS_PER_SHARD:-100}"
 PARALLEL_SHARDS="${PARALLEL_SHARDS:-1}"

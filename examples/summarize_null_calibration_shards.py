@@ -25,7 +25,7 @@ from si_shap.null_calibration import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INPUT_DIR = PROJECT_ROOT / "outputs" / "null_calibration_seed_123_shards"
+DEFAULT_INPUT_DIR = PROJECT_ROOT / "outputs" / "null_calibration" / "random_u_seed_123"
 
 
 def parse_args(argv=None):

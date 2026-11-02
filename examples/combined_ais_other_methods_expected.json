@@ -1,0 +1,54 @@
+{
+  "alpha_levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "comparison_events": [
+    "exact_set"
+  ],
+  "cross_method_randomness": "shared_data_target_and_monte_carlo_seeds",
+  "design_seed": 314159,
+  "designs": [
+    "baseline"
+  ],
+  "final_batch_size": 800,
+  "fixed_auxiliary_values": [
+    null
+  ],
+  "inference_method": "ais",
+  "max_final_samples": 51200,
+  "mcmc_steps": 20,
+  "method_inference_methods": {
+    "shap": "ais",
+    "spline_screening": "ais",
+    "mutual_information": "ais"
+  },
+  "methods": [
+    "shap",
+    "spline_screening",
+    "mutual_information"
+  ],
+  "mi_neighbors": 12,
+  "min_denominator_ess": 80.0,
+  "min_tail_ess": 15.0,
+  "minimum_calibration_iterations": 200,
+  "minimum_conditional_power": 0.8,
+  "minimum_signal_targets": 30,
+  "pilot_iters": 10,
+  "pilot_samples": 320,
+  "preset": "comprehensive",
+  "primary_selection_event": "exact_set",
+  "rf_jobs": 1,
+  "signal_positions": [
+    "first"
+  ],
+  "signal_strengths": [
+    0.3,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "spline_inference_method": "inherit",
+  "stop_when_ess_met": true
+}

@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "experiment": "rbf_shapley_analytic_power_cpu32_1000_20261024",
+  "output_root": "outputs/benchmarks/rbf_shapley_analytic_power_cpu32_1000_20261024",
+  "smoke": false,
+  "workers": 32,
+  "threads_per_worker": 1,
+  "iterations": 1000,
+  "batch_size": 10,
+  "n": 100,
+  "p": 4,
+  "k": 2,
+  "sigma": 1.0,
+  "seed": 2026102401,
+  "betas": [
+    0.0,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "design": "fresh_independent_gaussian",
+  "correlation": 0.0,
+  "basis": "additive_rbf",
+  "rbf_units": 3,
+  "center_quantiles": [
+    0.2,
+    0.5,
+    0.8
+  ],
+  "width_multiplier": 1.0,
+  "targets": [
+    "selected_shapley",
+    "full_shapley"
+  ],
+  "signal": "empirically_standardized_x_plus_half_x_squared_minus_one",
+  "signal_feature": 0,
+  "selection": "exact_full_coalition_rbf_rss_shapley",
+  "selection_event": "exact_set",
+  "target_rule": "uniform_from_sorted_selected_set",
+  "inference": "analytic_truncated_chi",
+  "alpha_levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "primary_alpha": 0.05,
+  "rank_tolerance": 1e-10,
+  "null_tolerance": 1e-09,
+  "matching": "fresh_X_noise_and_auxiliary_u_shared_across_betas_and_arms",
+  "required_versions": {
+    "numpy": "1.26.4",
+    "scipy": "1.17.1",
+    "threadpoolctl": "3.6.0"
+  }
+}

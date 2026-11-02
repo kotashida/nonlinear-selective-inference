@@ -17,6 +17,7 @@ import pandas as pd
 from scipy import stats
 
 from .inference import (
+    AIS_STRATEGIES,
     _chi_statistic,
     _run_ais,
     _run_conditional_mc,
@@ -30,6 +31,7 @@ from .selection import (
     _BUILTIN_SELECTOR_TYPES,
     _MemoizedSelector,
     SplineScreeningSelector,
+    LinearShapleySelector,
     _validate_selection_event,
     _validate_target_rule,
     make_selector,
@@ -149,6 +151,7 @@ def selective_inference(
     selection_method: str | None = None,
     estimator=None,
     selector=None,
+    test_statistic: str | None = None,
     selection_event: str | None = None,
     target_rule: str | None = None,
     target_seed: int = 123,
@@ -168,6 +171,7 @@ def selective_inference(
     mcmc_step_scales=(0.25, 0.5, 1.0, 2.0),
     mcmc_global_jump_probability: float = 0.1,
     stop_when_ess_met: bool = False,
+    ais_strategy: str = "baseline",
     verify_selector_determinism: bool = True,
 ):
     """Run selective tests after an interchangeable feature-selection method.
@@ -180,6 +184,11 @@ def selective_inference(
     ``selection_method`` selects one of ``shap``, ``lime``,
     ``mutual_information``, ``marginal_screening``, or ``spline_screening``;
     a custom ``selector`` may be supplied instead.
+    ``linear_shapley`` selection defaults to testing the same RSS quadratic
+    score; other selectors retain the spline test. ``test_statistic`` can
+    explicitly choose ``spline`` or ``linear_shapley``. Linear tests condition
+    on the range-projection direction and its orthogonal complement, giving a
+    chi radius whose square is proportional to the target quadratic score.
     ``sigma`` must be externally supplied and known under the stated model.
     Both ``conditional_mc`` and ``mcmc_rank`` return finite-sample-valid rank
     p-values.  The latter uses reversible Markov-chain proposals to retain
@@ -277,6 +286,10 @@ def selective_inference(
             "stop_when_ess_met is available only for exploratory AIS; "
             "finite-sample rank methods always use their fixed proposal budget."
         )
+    if ais_strategy not in AIS_STRATEGIES:
+        raise ValueError(f"ais_strategy must be one of {AIS_STRATEGIES}.")
+    if inference_method != "ais" and ais_strategy != "baseline":
+        raise ValueError("Non-baseline ais_strategy requires inference_method='ais'.")
     if inference_method == "ais" and (
         min_denominator_ess > max_final_samples
         or min_tail_ess > max_final_samples
@@ -297,9 +310,18 @@ def selective_inference(
     base_selector = resolved_selector
     while isinstance(base_selector, _MemoizedSelector):
         base_selector = base_selector.selector
+    if test_statistic is None:
+        test_statistic = "linear_shapley" if isinstance(base_selector, LinearShapleySelector) else "spline"
+    if test_statistic not in {"spline", "linear_shapley"}:
+        raise ValueError("test_statistic must be 'spline' or 'linear_shapley'.")
+    linear_statistic = None
+    if test_statistic == "linear_shapley":
+        linear_selector = base_selector if isinstance(base_selector, LinearShapleySelector) else LinearShapleySelector()
+        linear_statistic = linear_selector.statistic(X)
     if inference_method == "exact_spline" and (
         selection_event != "exact_set"
         or not isinstance(base_selector, SplineScreeningSelector)
+        or test_statistic != "spline"
     ):
         raise ValueError(
             "exact_spline requires SplineScreeningSelector and "
@@ -399,19 +421,24 @@ def selective_inference(
     for test_index, feature in enumerate(tested_features):
         feature = int(feature)
         position = int(rank_by_feature[feature])
-        basis = _spline_effect_basis(X[:, feature])
+        basis = (_spline_effect_basis(X[:, feature]) if linear_statistic is None
+                 else linear_statistic.support_basis(feature))
         test_rank = int(basis.shape[1])
         t_obs, projected = _chi_statistic(y, basis, sigma=sigma)
+        quadratic_score = (None if linear_statistic is None
+                           else float(linear_statistic.scores(y)[feature]))
         projected_norm = float(np.linalg.norm(projected))
         zero_tolerance = np.sqrt(np.finfo(float).eps) * max(
             1.0, float(np.linalg.norm(y))
         )
-        if projected_norm <= zero_tolerance:
+        degenerate_linear = linear_statistic is not None and projected_norm == 0.0
+        if projected_norm <= zero_tolerance and linear_statistic is None:
             raise FloatingPointError(
                 f"Feature {feature} has a numerically undefined effect direction."
             )
         orthogonal = y - projected
-        direction = projected / projected_norm
+        direction = (np.zeros_like(y) if degenerate_linear
+                     else projected / projected_norm)
         cache: dict[float, bool] = {}
 
         def is_selected(z):
@@ -436,7 +463,15 @@ def selective_inference(
                 f"feature {feature}."
             )
         feature_rng = np.random.default_rng(feature_seeds[test_index])
-        if inference_method == "exact_spline":
+        if degenerate_linear:
+            p_value, diagnostics = 1.0, {
+                "status": "ok", "p_value_method": "zero_linear_score_p_equals_one",
+                "finite_sample_valid": True, "selected_samples": 0,
+                "proposals": 0, "tail_samples": 0,
+                "denominator_ess": 0.0, "tail_ess": 0.0,
+                "mc_se": np.nan, "minimum_attainable_p_value": 1.0,
+            }
+        elif inference_method == "exact_spline":
             intervals = _spline_exact_set_intervals(
                 base_selector._bases(X),
                 orthogonal,
@@ -484,6 +519,7 @@ def selective_inference(
                 min_denominator_ess=min_denominator_ess,
                 min_tail_ess=min_tail_ess,
                 stop_when_ess_met=bool(stop_when_ess_met),
+                ais_strategy=ais_strategy,
             )
         rows.append(
             {
@@ -494,8 +530,11 @@ def selective_inference(
                 "shap_importance": float(observed.importance[feature]),
                 "shap_rank": int(rank_by_feature[feature]),
                 "test_rank": test_rank,
-                "t_obs": float(t_obs),
-                "unadjusted_p_value": float(stats.chi.sf(t_obs, df=test_rank)),
+                "t_obs": float(t_obs) if quadratic_score is None else quadratic_score,
+                "radial_t_obs": float(t_obs),
+                "test_statistic": test_statistic,
+                "unadjusted_p_value": (1.0 if degenerate_linear else float(stats.chi.sf(t_obs, df=test_rank))),
+                "unadjusted_p_value_conditioning": ("none" if linear_statistic is None else "range_projection_direction"),
                 "raw_selective_p_value": p_value,
                 "selection_event": selection_event,
                 "target_rule": target_rule,
@@ -535,6 +574,8 @@ def selective_inference(
         "observed_target_feature": observed_target,
         "multiplicity": multiplicity,
         "inference_method": inference_method,
+        "test_statistic": test_statistic,
+        "linear_statistic_settings": (None if linear_statistic is None else dict(linear_selector.get_settings())),
         "ais_seed": int(ais_seed),
         "monte_carlo_seed": int(ais_seed),
         "pilot_iters": pilot_iters,
@@ -547,6 +588,7 @@ def selective_inference(
         "mcmc_step_scales": mcmc_step_scales,
         "mcmc_global_jump_probability": float(mcmc_global_jump_probability),
         "stop_when_ess_met": bool(stop_when_ess_met),
+        "ais_strategy": ais_strategy,
         "verify_selector_determinism": bool(verify_selector_determinism),
         "determinism_check_repetitions": 3 if check_repeated_calls else 1,
         **selector_settings,
@@ -566,7 +608,8 @@ def selective_inference(
         "target_rule": target_rule,
         "observed_target_feature": observed_target,
         "auxiliary_u": realized_u,
-        "hypothesis": HYPOTHESIS,
+        "hypothesis": (HYPOTHESIS if linear_statistic is None else
+                       "H0: A_j mu = 0 (zero mean contribution in every positively weighted coalition); X fixed, Y ~ N(mu, sigma^2 I)."),
         "assumptions": ASSUMPTIONS,
         "effect_confidence_intervals_implemented": False,
         "settings": settings,

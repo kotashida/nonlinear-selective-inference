@@ -11,7 +11,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["POLARS_MAX_THREADS"] = "1"
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -45,22 +53,30 @@ def parse_args(argv=None):
     parser.add_argument(
         "--shap-dir",
         type=Path,
-        default=Path("outputs/selection_method_validation_clean_shards"),
+        default=Path(
+            "outputs/selection_method_validation/same_target/conditional_mc_reference"
+        ),
     )
     parser.add_argument(
         "--marginal-dir",
         type=Path,
-        default=Path("outputs/selection_method_validation_same_target_mi_mc_shards"),
+        default=Path(
+            "outputs/selection_method_validation/same_target/mutual_information_mcmc"
+        ),
     )
     parser.add_argument(
         "--spline-dir",
         type=Path,
-        default=Path("outputs/selection_method_validation_same_target_spline_screening_shards"),
+        default=Path(
+            "outputs/selection_method_validation/same_target/spline_screening"
+        ),
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("outputs/selection_method_validation_combined_analysis"),
+        default=Path(
+            "outputs/selection_method_validation/same_target/combined_analysis"
+        ),
     )
     return parser.parse_args(argv)
 
