@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "experiment": "shapley_targets_cpu12_smoke_20261016",
+  "output_root": "outputs/benchmarks/shapley_targets_cpu12_smoke_20261016",
+  "smoke": true,
+  "workers": 2,
+  "threads_per_worker": 1,
+  "iterations": 8,
+  "batch_size": 4,
+  "n": 256,
+  "p": 4,
+  "k": 2,
+  "sigma": 1.0,
+  "seed": 2026101601,
+  "designs": [
+    "orthogonal_factorial",
+    "independent_gaussian",
+    "correlated_gaussian"
+  ],
+  "correlation": 0.6,
+  "bases": [
+    "linear",
+    "cubic_spline"
+  ],
+  "spline_df": 3,
+  "targets": [
+    "marginal",
+    "model",
+    "selected_shapley",
+    "full_shapley"
+  ],
+  "conditions": [
+    {
+      "id": "global_null",
+      "mean": "zero",
+      "rms": 0.0
+    },
+    {
+      "id": "linear_025",
+      "mean": "linear_x0",
+      "rms": 0.25
+    },
+    {
+      "id": "linear_050",
+      "mean": "linear_x0",
+      "rms": 0.5
+    },
+    {
+      "id": "curve_025",
+      "mean": "quadratic_x0",
+      "rms": 0.25
+    },
+    {
+      "id": "curve_050",
+      "mean": "quadratic_x0",
+      "rms": 0.5
+    },
+    {
+      "id": "marginal_null_nuisance_050",
+      "mean": "x1_squared_residualized_on_spline_x0",
+      "rms": 0.5
+    }
+  ],
+  "selection": "exact_full_coalition_shapley_for_each_basis",
+  "selection_event": "exact_set",
+  "target_rule": "uniform_from_sorted_selected_set",
+  "inference": "analytic_quadratic_selection_intervals_truncated_chi",
+  "alpha_levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "rank_tolerance": 1e-10,
+  "null_tolerance": 1e-09,
+  "required_versions": {
+    "numpy": "1.26.4",
+    "scipy": "1.17.1",
+    "patsy": "1.0.2"
+  }
+}

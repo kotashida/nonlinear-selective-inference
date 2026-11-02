@@ -1,0 +1,117 @@
+{
+  "benchmark": "selected_five_kde2p5_1000_exact_pipeline",
+  "reference_output": "outputs/selection_method_validation/exact_set/selected_five_kde2p5_300_20260923",
+  "reference_methods": [
+    "shap_ais",
+    "lime_40_ais",
+    "spline_screening_ais",
+    "spline_screening_exact",
+    "mutual_information_kde_2p5_ais"
+  ],
+  "datasets": [
+    "heating_load",
+    "cooling_load",
+    "gas_turbine",
+    "red_wine",
+    "white_wine",
+    "abalone",
+    "concrete",
+    "housing"
+  ],
+  "methods": [
+    "shap_ais",
+    "lime_40_ais",
+    "spline_screening_ais",
+    "spline_screening_exact",
+    "mutual_information_kde_2p5_ais"
+  ],
+  "sample_size": 100,
+  "repetitions": 1000,
+  "repetition_start": 0,
+  "master_seed": 20260908,
+  "alpha": 0.05,
+  "common_arguments": {
+    "k_select": 2,
+    "sigma": 1.0,
+    "test_statistic": "spline",
+    "selection_event": "exact_set",
+    "target_rule": "uniform_from_selected",
+    "multiplicity": "none",
+    "selection_decimals": 10,
+    "pilot_iters": 10,
+    "pilot_samples": 320,
+    "final_batch_size": 800,
+    "max_final_samples": 51200,
+    "min_denominator_ess": 80.0,
+    "min_tail_ess": 15.0,
+    "mcmc_steps": 20
+  },
+  "rf_params": {
+    "n_estimators": 50,
+    "max_depth": 5,
+    "random_state": 42,
+    "n_jobs": 1
+  },
+  "method_specific": {
+    "ais": {
+      "ais_strategy": "a_robust_draw_floor",
+      "stop_when_ess_met": true
+    },
+    "exact_spline": {
+      "ais_strategy": "baseline",
+      "stop_when_ess_met": false
+    },
+    "lime": {
+      "random_state": 42,
+      "num_samples": 64,
+      "num_explanations": 40,
+      "kernel_width": null,
+      "ridge_alpha": 1.0
+    },
+    "mutual_information": {
+      "random_state": 42,
+      "n_neighbors": 30,
+      "estimator": "kde",
+      "n_bins": 5,
+      "bandwidth": 2.5
+    }
+  },
+  "input": {
+    "path": "benchmarks/table_dataset.pkl",
+    "sha256": "9f2276d10cfa1110929429361f505627133359012446aa78016ea55ba9805729",
+    "preprocessing": "benchmarks/process.ipynb; full-dataset standardization and documented jitter",
+    "raw_source_sha256": {
+      "abalone.csv": "de37cdcdcaaa50c309d514f248f7c2302a5f1f88c168905eba23fe2fbc78449f",
+      "Concrete_Data.xls": "710076c66b9ca3f8050e7942f3dcbdbe04013534daeb0077ffd3079a52d8e0c4",
+      "ENB2012_data.xlsx": "0089fcffc1415e41e2ff63730cca5280efe54fc43d722dfde1b0aaa808e35dc4",
+      "gt_2015.csv": "9b08f35fde0d4b138232a605db4093c2b8bf9d6757e6f1fbd9534ad616c13591",
+      "Real estate valuation data set.xlsx": "597d72fcc6c0539e6035a033ddb387db48fff3fb1f3c98fee31fe081c64a9059",
+      "winequality-red.csv": "4a402cf041b025d4566d954c3b9ba8635a3a8a01e039005d97d6a710278cf05e",
+      "winequality-white.csv": "76c3f809815c17c07212622f776311faeb31e87610d52c26d87d6e361b169836"
+    }
+  },
+  "archived_core_source_hashes": {
+    "src/si_shap/api.py": "e2b4f10f52c9fe309b99dcb6d67926e8b8acf8ccb2ae0255b3eec2cb6db1d931",
+    "src/si_shap/inference.py": "d9564e226ecfeb7ce455f10a4fa3886fcc84eac1952129d96355176c9c86ffef",
+    "src/si_shap/selection.py": "9e457120191d2b9c116e3f9da36f6c8f990f282b5656ffe4cda6de8cd0cc44aa"
+  },
+  "compatibility_changes": [
+    {
+      "change": "Replace the synthetic n=100, p=20 design and simulated response with a row subsample from each preprocessed benchmark dataset.",
+      "reason": "Strictly necessary to evaluate the existing pipeline on the requested real datasets."
+    },
+    {
+      "change": "Use the benchmark dataset's native number of features.",
+      "reason": "Strictly necessary because the supplied datasets have 7 to 11 features rather than 20."
+    }
+  ],
+  "non_changes": [
+    "n=100",
+    "k_select=2",
+    "one uniformly randomized selected target",
+    "exact-set conditioning",
+    "spline test statistic and sigma=1 working scale",
+    "all selector hyperparameters",
+    "all active AIS proposal, ESS, stopping, and strategy settings"
+  ]
+}

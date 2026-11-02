@@ -1,0 +1,447 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\documentclass[
+  11pt,
+]{article}
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{5}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{needspace}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Selective Tests of Penalized-Fit Shapley Contributions after Cross-Validation},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Selective Tests of Penalized-Fit Shapley Contributions after
+Cross-Validation}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\setcounter{section}{1}
+
+\section{Problem Setup}\label{problem-setup}
+
+\subsection{Statistical model and fixed auxiliary
+information}\label{statistical-model-and-fixed-auxiliary-information}
+
+Consider a regression dataset \((X,\boldsymbol y)\) with \(n\)
+observations and \(m\) candidate features, where
+\(X=[\boldsymbol x_1,\ldots,\boldsymbol x_m]\in\mathbb R^{n\times m}\)
+is fixed, \(X_{ij}\) is its \((i,j)\) entry, and
+\(\boldsymbol y\in\mathbb R^n\) is a realization of
+
+\[
+\boldsymbol Y=\boldsymbol\mu(X)+\boldsymbol\varepsilon,\qquad
+\boldsymbol\varepsilon\sim \mathcal N(\boldsymbol0,\sigma^2 I_n),\qquad \sigma>0\text{ known}.
+\tag{1}
+\]
+
+Here \(I_n\) is the \(n\times n\) identity matrix and \(\boldsymbol0\)
+denotes a zero vector of the required dimension. Write
+\(\boldsymbol\mu=\boldsymbol\mu(X)\) and denote the observed response by
+\(\boldsymbol y_{\rm obs}\); \(\boldsymbol y\) denotes a generic
+response vector. We impose no parametric representation of
+\(\boldsymbol\mu\): the regression basis below defines the contribution
+being tested, rather than a requirement that the true mean belong to
+that basis. All probability statements condition on \(X\). They also
+condition on auxiliary random choices, denoted collectively by
+\(\omega\), that determine basis centers and cross-validation folds.
+These choices are independent of the response noise given \(X\). The
+basis fraction, candidate penalty grid, and number \(k\) of selected
+features are specified before inspecting \(\boldsymbol Y\).
+
+\subsection{Coalition models and response-dependent
+tuning}\label{coalition-models-and-response-dependent-tuning}
+
+Let \([m]=\{1,\ldots,m\}\), and fix \(k\in\{1,\ldots,m\}\). For a
+prespecified fraction \(\rho\in(0,1]\), sample
+\(m_{\mathrm{RBF}}=\max\{1,\lceil\rho n\rceil\}\) distinct row indices
+\(i_1,\ldots,i_{m_{\mathrm{RBF}}}\) using \(\omega\), sharing these
+indices across features. For feature \(j\in[m]\), define centers
+\(c_{jq}=X_{i_qj}\) and, for \(q=1,\ldots,m_{\mathrm{RBF}}\),
+\(i=1,\ldots,n\), and \(t\in\mathbb R\), set
+
+\[
+g_{jq}(t)=\exp\!\left[-\frac{(t-c_{jq})^2}{2s_j^2}\right],\qquad
+(G_j)_{iq}=g_{jq}(X_{ij})-\frac1n\sum_{a=1}^n g_{jq}(X_{aj}).
+\tag{2}
+\]
+
+The width \(s_j\) is the median of \(|X_{aj}-X_{bj}|\) over
+\(1\le a<b\le n\). If this is zero, use the median strictly positive
+distance; if there are no positive distances, use \(s_j=1\). Let
+\(\mathbf1_n\) denote the vector of \(n\) ones. Thus
+\(G_j\in\mathbb R^{n\times m_{\mathrm{RBF}}}\) is determined by \(X\)
+and \(\omega\), and \(\mathbf1_n^\top G_j=\boldsymbol0^\top\). For
+\(S\subseteq[m]\), let \(G_S\in\mathbb R^{n\times m_{\mathrm{RBF}}|S|}\)
+concatenate the blocks indexed by \(S\), with \(G_\varnothing\) having
+zero columns. These are additive univariate Gaussian basis models; the
+construction contains no multivariate interaction basis.
+
+\Needspace{7\baselineskip}
+
+For a fixed \(\lambda>0\), define the minimized penalized training
+objective
+
+\[
+L_\lambda(S;\boldsymbol y)=\min_{\beta_0,\boldsymbol\beta_{-0}}\left\{
+\|\boldsymbol y-\beta_0\mathbf1_n-G_S\boldsymbol\beta_{-0}\|_2^2+n\lambda\|\boldsymbol\beta_{-0}\|_2^2\right\}.
+\tag{3}
+\]
+
+Here \(\beta_0\in\mathbb R\) is the unpenalized intercept,
+\(\boldsymbol\beta_{-0}\in\mathbb R^{m_{\mathrm{RBF}}|S|}\) contains the
+basis coefficients. With \(P_0=\mathbf1_n\mathbf1_n^\top/n\),
+\(C_0=I_n-P_0\), and \(K_S=G_SG_S^\top\), set
+
+\[
+H_S^\lambda=K_S(K_S+n\lambda I_n)^{-1},\qquad H_\varnothing^\lambda=0.
+\]
+
+For \(j\in[m]\setminus S\), centering gives
+
+\[
+\begin{aligned}
+L_\lambda(S;\boldsymbol y)&=\boldsymbol y^\top(C_0-H_S^\lambda)\boldsymbol y,\\
+\Delta_j^\lambda(S;\boldsymbol y)&=L_\lambda(S;\boldsymbol y)-L_\lambda(S\cup\{j\};\boldsymbol y)\\
+&=\boldsymbol y^\top(H_{S\cup\{j\}}^\lambda-H_S^\lambda)\boldsymbol y.
+\end{aligned}
+\tag{4}
+\]
+
+The increment matrix is positive semidefinite. Indeed, adding a block
+increases \(K_S\) in the Loewner order and
+\(H_S^\lambda=I_n-n\lambda(K_S+n\lambda I_n)^{-1}\). Consequently
+\(\Delta_j^\lambda(S;\boldsymbol y)\ge0\). Equation (4) concerns the
+\emph{minimized penalized objective}, including the ridge penalty.
+Replacing it with the residual sum of squares evaluated at a ridge fit
+would define a different score.
+
+We choose \(\lambda\) by five-fold cross-validation on the full-feature
+model over the ordered grid
+
+\[
+\Lambda=(\lambda_1,\ldots,\lambda_9)=(10^{-6},10^{-5},\ldots,10^2).
+\]
+
+Within each fold, centers, widths, and centering means are constructed
+from the training rows alone, and the penalty in (3) uses that fold's
+training sample size. With \(X\) and \(\omega\) fixed, each validation
+prediction is linear in \(\boldsymbol y\). Therefore there are fixed
+symmetric positive semidefinite matrices \(C_\ell\) such that the pooled
+validation mean squared error is
+
+\[
+\operatorname{CV}_\ell(\boldsymbol y)=\boldsymbol y^\top C_\ell \boldsymbol y,\qquad
+\widehat\ell(\boldsymbol y)=\underset{\ell\in\{1,\ldots,9\}}{\operatorname{argmin}}\;\boldsymbol y^\top C_\ell \boldsymbol y,
+\qquad \widehat\lambda(\boldsymbol y)=\lambda_{\widehat\ell(\boldsymbol y)}.
+\tag{5}
+\]
+
+Ties are resolved toward the smaller penalty. The full-data basis is
+then used with the same selected penalty for every coalition. There is
+no coalition-specific tuning.
+
+\subsection{Shapley ranking and the selected
+target}\label{shapley-ranking-and-the-selected-target}
+
+For a nonempty feature universe \(U\subseteq[m]\) and \(j\in U\), define
+
+\[
+w_{j,U}(S)=\frac{|S|!(|U|-|S|-1)!}{|U|!}
+=\frac{1}{|U|\binom{|U|-1}{|S|}},
+\qquad S\subseteq U\setminus\{j\},
+\]
+
+\[
+A_{j,U}^\lambda
+=\sum_{S\subseteq U\setminus\{j\}}w_{j,U}(S)
+\bigl(H_{S\cup\{j\}}^\lambda-H_S^\lambda\bigr),
+\qquad
+T_{j,U}^\lambda(\boldsymbol y)=\boldsymbol y^\top A_{j,U}^\lambda \boldsymbol y.
+\tag{6}
+\]
+
+\Needspace{7\baselineskip}
+
+Thus \(T_{j,U}^\lambda\) averages the improvement from adding feature
+\(j\) over all insertion orders within \(U\). The matrices are positive
+semidefinite, and the allocation satisfies
+
+\[
+\sum_{j\in U}T_{j,U}^\lambda(\boldsymbol y)
+=L_\lambda(\varnothing;\boldsymbol y)-L_\lambda(U;\boldsymbol y).
+\tag{7}
+\]
+
+The coalition sums in (6) are evaluated exhaustively. Rank the features
+by decreasing
+\(T_{j,[m]}^{\widehat\lambda(\boldsymbol y)}(\boldsymbol y)\), breaking
+ties by increasing feature index, and denote the unordered top-\(k\) set
+by \(M(\boldsymbol y)\). Independently generate
+\(V\sim\operatorname{Unif}[0,1)\) and set
+
+\[
+J(\boldsymbol y,V)=M(\boldsymbol y)_{(1+\lfloor kV\rfloor)},
+\tag{8}
+\]
+
+where the elements of \(M(\boldsymbol y)\) are listed in increasing
+index order. Conditional on \(M(\boldsymbol y)\), this chooses one
+target uniformly. The realized value \(v\) is held fixed during
+inference.
+
+Let \(\ell_0=\widehat\ell(\boldsymbol y_{\rm obs})\),
+\(\lambda_0=\lambda_{\ell_0}\), \(M_0=M(\boldsymbol y_{\rm obs})\), and
+\(j=J(\boldsymbol y_{\rm obs},v)\). We consider two distinct targets for
+this same selected feature:
+
+\[
+\begin{aligned}
+U&=M_0 &&\text{(Selected-Features Shapley contribution)},\\
+U&=[m] &&\text{(All-Features Shapley contribution)}.
+\end{aligned}
+\tag{9}
+\]
+
+Both use the ranking based on the full feature universe. The
+Selected-Features target does not rerank features using a
+restricted-universe score. The two procedures share the CV winner,
+selected set, and target feature.
+
+\subsection{Hypotheses and their
+interpretation}\label{hypotheses-and-their-interpretation}
+
+For the realized \(U,j,\ell_0\), abbreviate \(A=A_{j,U}^{\lambda_0}\)
+and define the mean-response contribution
+
+\[
+T_{j,U}^{\lambda_0}(\boldsymbol\mu)=\boldsymbol\mu^\top A\boldsymbol\mu.
+\]
+
+The ideal zero-contribution hypotheses are
+
+\[
+H_{0,j,U}:T_{j,U}^{\lambda_0}(\boldsymbol\mu)=0
+\quad\text{versus}\quad
+H_{1,j,U}:T_{j,U}^{\lambda_0}(\boldsymbol\mu)>0.
+\tag{10}
+\]
+
+These parameters refer to applying the coalition objective to the
+noise-free mean vector. They are not the expectation of the observed
+attribution: for fixed \(A\),
+\(\mathbb E_{\boldsymbol\mu}[\boldsymbol Y^\top A\boldsymbol Y]=\boldsymbol\mu^\top A\boldsymbol\mu+\sigma^2\operatorname{tr}(A)\).
+
+Let \(W_j=\operatorname{range}(A)\), \(P_{W_j}\) be its orthogonal
+projector, and \(d_j=\dim W_j\); the dependence of \(W_j\) and \(d_j\)
+on \(U\) and \(\lambda_0\) is suppressed. Since \(A\succeq0\),
+
+\[
+\boldsymbol\mu^\top A\boldsymbol\mu=0\quad\Longleftrightarrow\quad P_{W_j}\boldsymbol\mu=\boldsymbol0.
+\tag{11}
+\]
+
+Moreover, positivity of every Shapley weight implies that the null in
+(10) holds exactly when \(\Delta_j^{\lambda_0}(S;\boldsymbol\mu)=0\) for
+every \(S\subseteq U\setminus\{j\}\). Hence the test concerns the
+absence of contribution across \emph{all} coalitions in the chosen
+universe. It does not isolate a coefficient in the full additive model
+or assert conditional independence or causality.
+
+The feature label need not imply a small test space. Writing
+\(\mathcal V_U=\operatorname{col}(G_U)\), one has
+\(W_j\subseteq\mathcal V_U\). If \(W_j=\mathcal V_U\), (10) becomes the
+absence of mean signal in that entire centered basis space. Different
+features can have different attribution scores but the same
+zero-contribution null.
+
+\textbf{Numerical specification of the test space.} For numerical
+computation, we first compress \([G_1,\ldots,G_m]\) by retaining
+singular values exceeding \(\tau\max(1,s_{\max})\), with
+\(\tau=10^{-10}\), where \(s_{\max}\) is the largest singular value.
+Coalition matrices are constructed in this retained space. From the
+resulting target matrix, we retain eigenvectors whose eigenvalues exceed
+\(\tau\max(1,a_{\max})\). Here \(a_{\max}\) is the largest eigenvalue of
+the compressed target matrix. If \(Q\) contains the retained orthonormal
+left singular vectors of the full basis and \(B\) contains these
+orthonormal target eigenvectors in \(Q\) coordinates, the test uses
+
+\[
+W_{j,\tau}=\operatorname{col}(QB),\qquad
+H_{0,j,U}^{(\tau)}:P_{W_{j,\tau}}\boldsymbol\mu=\boldsymbol0.
+\tag{12}
+\]
+
+All subsequent formulas apply with this numerically specified
+\(W_{j,\tau}\) as well as with ideal \(W_j\). Equivalence to the ideal
+quadratic null requires agreement of the retained and ideal ranges; a
+discarded small positive eigenvalue is not an exact mathematical zero.
+The tolerance is therefore part of the target specification.
+
+\subsection{Conditional inferential
+procedure}\label{conditional-inferential-procedure}
+
+For either specified test space, let \(P\) denote its orthogonal
+projector (\(P_{W_j}\) or \(P_{W_{j,\tau}}\)) and
+\(d_j=\operatorname{rank}(P)\) its rank. When \(d_j\ge1\), define
+
+\[
+R_j(\boldsymbol Y)=\frac{\|P\boldsymbol Y\|_2}{\sigma},\qquad
+\mathcal Q_{\boldsymbol Y}=(I_n-P)\boldsymbol Y,\qquad
+\boldsymbol D_j(\boldsymbol Y)=\frac{P\boldsymbol Y}{\|P\boldsymbol Y\|_2}.
+\tag{13}
+\]
+
+For fixed \(P\), under \(P\boldsymbol\mu=\boldsymbol0\), the radius has
+distribution \(\chi_{d_j}\) and is independent of the direction
+\(\boldsymbol D_j(\boldsymbol Y)\) and orthogonal component
+\(\mathcal Q_{\boldsymbol Y}\). Conditional on the realized CV winner,
+selected set, and \(v\), the projector is fixed. For
+\(\boldsymbol z_j=\mathcal Q_{\boldsymbol y_{\rm obs}}\) and
+\(\boldsymbol u_j=\boldsymbol D_j(\boldsymbol y_{\rm obs})\), define the
+response ray
+\(\boldsymbol y_j(r)=\boldsymbol z_j+\sigma r\boldsymbol u_j\),
+\(r\ge0\), and the event-preserving radial region
+
+\[
+\mathcal Z=
+\{r\ge0:\widehat\ell(\boldsymbol y_j(r))=\ell_0,\ M(\boldsymbol y_j(r))=M_0\}.
+\tag{14}
+\]
+
+The event fixes the unordered selected set, not its internal ranking.
+Because \(v\) is fixed, it also preserves the target identity. For each
+\(a\in M_0\) and \(b\in[m]\setminus M_0\), membership requires
+
+\[
+\boldsymbol y_j(r)^\top\bigl(A_{a,[m]}^{\lambda_0}-A_{b,[m]}^{\lambda_0}\bigr)\boldsymbol y_j(r)\ge0,
+\tag{15}
+\]
+
+and, for every \(\ell\in\{1,\ldots,9\}\setminus\{\ell_0\}\), it requires
+
+\[
+\boldsymbol y_j(r)^\top(C_\ell-C_{\ell_0})\boldsymbol y_j(r)\ge0.
+\tag{16}
+\]
+
+\Needspace{7\baselineskip}
+
+Equality is admitted only when the relevant index tie rule favors the
+observed choice. For either comparison, let
+\(F\in\mathbb R^{n\times n}\) denote the corresponding symmetric matrix
+difference in (15) or (16). The comparison is quadratic in \(r\):
+
+\[
+\sigma^2(\boldsymbol u_j^\top F\boldsymbol u_j)r^2+2\sigma(\boldsymbol u_j^\top F\boldsymbol z_j)r+\boldsymbol z_j^\top F\boldsymbol z_j\ge0.
+\tag{17}
+\]
+
+Intersecting their solution sets gives a finite union of intervals, up
+to endpoints of zero continuous probability. Both identically tied
+comparisons and their tie rules must be retained. Importantly, the CV
+matrices in (16) act on the original response space; CV need not depend
+only on its projection into the full-data basis space.
+
+Write \(f_{\chi_{d_j}}\) for the density of the chi distribution with
+\(d_j\) degrees of freedom and \(\mathbf1\{\cdot\}\) for the indicator
+function. Conditioning on \(\ell_0,M_0,\boldsymbol z_j,\boldsymbol u_j\)
+below means conditioning on \(\widehat\ell(\boldsymbol Y)=\ell_0\),
+\(M(\boldsymbol Y)=M_0\),
+\(\mathcal Q_{\boldsymbol Y}=\boldsymbol z_j\), and
+\(\boldsymbol D_j(\boldsymbol Y)=\boldsymbol u_j\). For positive
+selection probability, the conditional density of \(R_j(\boldsymbol Y)\)
+under the applicable null \(H_0\) is
+
+\[
+f(r\mid X,\omega,v,\ell_0,M_0,\boldsymbol z_j,\boldsymbol u_j;H_0)
+=\frac{f_{\chi_{d_j}}(r)\mathbf1\{r\in\mathcal Z\}}
+{\int_{\mathcal Z} f_{\chi_{d_j}}(t)\,dt}.
+\tag{18}
+\]
+
+With \(r_{\rm obs}=R_j(\boldsymbol y_{\rm obs})\), compute the selective
+upper-tail probability
+
+\[
+p_{\mathrm{selective},j,U}
+=\frac{\int_{\mathcal Z\cap[r_{\rm obs},\infty)} f_{\chi_{d_j}}(t)\,dt}
+{\int_{\mathcal Z} f_{\chi_{d_j}}(t)\,dt}.
+\tag{19}
+\]
+
+We evaluate interval masses using chi distribution functions and
+logarithmic arithmetic. For a zero-rank target, set
+\(p_{\mathrm{selective},j,U}=1\). For positive-rank targets, assume
+\(r_{\rm obs}>0\) and positive finite selection mass; these conditions
+hold almost surely under the nondegenerate conditional model.
+
+In exact arithmetic, (18)-(19) yield a uniform conditional \(p\)-value
+under the corresponding fixed-label null, for nondegenerate conditioning
+values. In particular, for every \(\boldsymbol\mu\) satisfying that null
+and every \(\alpha\in(0,1)\),
+
+\[
+\begin{aligned}
+\mathbb P_{\boldsymbol\mu}\!\bigl(&p_{\mathrm{selective},j,U}\le\alpha\mid
+X,\omega,v,\widehat\ell(\boldsymbol Y)=\ell_0,\ M(\boldsymbol Y)=M_0,\\
+&\mathcal Q_{\boldsymbol Y}=\boldsymbol z_j,\ \boldsymbol D_j(\boldsymbol Y)=\boldsymbol u_j\bigr)\le\alpha.
+\end{aligned}
+\tag{20}
+\]
+
+For the zero-rank convention, rejection probability is zero. The
+Gaussian assumption, known scale, specified test space, and faithful
+event computation are essential to this statement; floating-point
+implementation requires separate numerical validation.
+
+For a prespecified significance level \(\alpha\in(0,1)\), reject when
+\(p_{\mathrm{selective},j,U}<\alpha\). The procedure tests one uniformly
+selected feature for a prespecified target definition. The guarantee is
+for that individual test. Reporting multiple discoveries or choosing a
+target definition after examining its \(p\)-value requires an additional
+error-control argument.
+
+\end{document}

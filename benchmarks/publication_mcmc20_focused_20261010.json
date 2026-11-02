@@ -1,0 +1,106 @@
+{
+  "schema": 1,
+  "experiment": "publication_five_mcmc20_focused_20261010",
+  "output_root": "outputs/benchmarks/publication_five_mcmc20_focused_20261010",
+  "master_seed": 2026101001,
+  "workers": 32,
+  "smoke": false,
+  "reference": "benchmarks/publication_mcmc_reference.json",
+  "reference_sha256": "e0a0cc6d65ef4c611ca582c8bb59b00fcd91477594ddf34dad55aa4379a89d86",
+  "methods": [
+    "shap_mcmc",
+    "lime_mcmc",
+    "spline_mcmc",
+    "mutual_information_mcmc",
+    "spline_exact"
+  ],
+  "alpha_levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "primary_alpha": 0.05,
+  "rejection_rule": "p < alpha",
+  "sigma": 1.0,
+  "bootstrap_replicates": 2000,
+  "bootstrap_seed": 2026101002,
+  "calibration_tolerance": 0.01,
+  "prepared_root": "benchmarks/publication_mcmc_data",
+  "null_conditions": [
+    {
+      "id": "iid_n100",
+      "n": 100,
+      "p": 20,
+      "rho": 0,
+      "repetitions": 5000,
+      "primary": true
+    },
+    {
+      "id": "correlated_n100",
+      "n": 100,
+      "p": 20,
+      "rho": 0.5,
+      "repetitions": 1000,
+      "primary": false
+    }
+  ],
+  "real_datasets": [
+    "heating_load",
+    "cooling_load",
+    "gas_turbine",
+    "red_wine",
+    "white_wine",
+    "abalone",
+    "concrete",
+    "housing"
+  ],
+  "real_conditions": [
+    {
+      "id": "observed_n100",
+      "mode": "observed",
+      "n": 100,
+      "beta": null,
+      "repetitions": 500,
+      "primary": false
+    },
+    {
+      "id": "gaussian_null_n100",
+      "mode": "gaussian_null",
+      "n": 100,
+      "beta": 0,
+      "repetitions": 1000,
+      "primary": false,
+      "datasets": [
+        "heating_load",
+        "red_wine"
+      ]
+    },
+    {
+      "id": "gaussian_signal_b05_n100",
+      "mode": "gaussian_signal",
+      "n": 100,
+      "beta": 0.5,
+      "repetitions": 500,
+      "primary": false,
+      "datasets": [
+        "heating_load",
+        "red_wine"
+      ]
+    },
+    {
+      "id": "gaussian_signal_b1_n100",
+      "mode": "gaussian_signal",
+      "n": 100,
+      "beta": 1.0,
+      "repetitions": 500,
+      "primary": false,
+      "datasets": [
+        "heating_load",
+        "red_wine"
+      ]
+    }
+  ],
+  "primary_calibration_conditions": [
+    "iid_n100"
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "null_benchmark": {
+    "experiment": "selected_five_null_fpr_10000_cpu32_20260928",
+    "output_root": "outputs/benchmarks/selected_five_null_fpr_10000_cpu32_20260928",
+    "reference_output": "outputs/benchmarks/selected_five_kde2p5_1000_cpu32_20260924",
+    "sample_size": 100,
+    "n_features": 20,
+    "repetitions": 10000,
+    "master_seed": 20260928,
+    "n_shards": 32,
+    "cpu_budget": 32,
+    "numerical_threads_per_worker": 1,
+    "alpha_levels": [
+      0.01,
+      0.05,
+      0.1
+    ],
+    "primary_alpha": 0.05,
+    "methods": [
+      "shap_ais",
+      "lime_40_ais",
+      "spline_screening_ais",
+      "spline_screening_exact",
+      "mutual_information_kde_2p5_ais"
+    ],
+    "expected_tests": 50000,
+    "null_dgp": "Each trial redraws X_ij iid N(0,1) and y_i iid N(0,1), independently; mu=0, known sigma=1; no response standardization or missingness. X is fixed during selection and inference within a trial.",
+    "failure_policy": "Keep every attempted trial; report finite-only FPR, all-attempt rejection rate, failures, and bounds treating all failures as rejections/nonrejections. Never infer control from failure-as-nonrejection alone.",
+    "source_policy": "Use the frozen package recovered from the original September 24 benchmark upload, checked against all three archived core hashes.",
+    "repetition_start": 0,
+    "datasets": [
+      "iid_gaussian_null"
+    ],
+    "common_arguments": {
+      "k_select": 2,
+      "sigma": 1,
+      "test_statistic": "spline",
+      "selection_event": "exact_set",
+      "target_rule": "uniform_from_selected",
+      "multiplicity": "none",
+      "selection_decimals": 10,
+      "pilot_iters": 10,
+      "pilot_samples": 320,
+      "final_batch_size": 800,
+      "max_final_samples": 51200,
+      "min_denominator_ess": 80,
+      "min_tail_ess": 15,
+      "mcmc_steps": 20
+    },
+    "rf_params": {
+      "n_estimators": 50,
+      "max_depth": 5,
+      "random_state": 42,
+      "n_jobs": 1
+    },
+    "method_specific": {
+      "ais": {
+        "ais_strategy": "a_robust_draw_floor",
+        "stop_when_ess_met": true
+      },
+      "exact_spline": {
+        "ais_strategy": "baseline",
+        "stop_when_ess_met": false
+      },
+      "lime": {
+        "random_state": 42,
+        "num_samples": 64,
+        "num_explanations": 40,
+        "kernel_width": null,
+        "ridge_alpha": 1
+      },
+      "mutual_information": {
+        "random_state": 42,
+        "n_neighbors": 30,
+        "estimator": "kde",
+        "n_bins": 5,
+        "bandwidth": 2.5
+      }
+    },
+    "package_versions": {
+      "matplotlib": "3.11.0",
+      "numpy": "1.26.4",
+      "pandas": "3.0.3",
+      "patsy": "1.0.2",
+      "scikit-learn": "1.9.0",
+      "scipy": "1.17.1",
+      "shap": "0.49.1",
+      "tqdm": "4.68.4"
+    },
+    "archived_core_source_hashes": {
+      "src/si_shap/api.py": "e2b4f10f52c9fe309b99dcb6d67926e8b8acf8ccb2ae0255b3eec2cb6db1d931",
+      "src/si_shap/inference.py": "d9564e226ecfeb7ce455f10a4fa3886fcc84eac1952129d96355176c9c86ffef",
+      "src/si_shap/selection.py": "9e457120191d2b9c116e3f9da36f6c8f990f282b5656ffe4cda6de8cd0cc44aa"
+    },
+    "source_hashes": {
+      "benchmarks/run_selected_five_null_fpr.py": "196671a31928905490fa638f3cade74d75cca52a4dcccd5c9cba8228e4facf47",
+      "benchmarks/selected_five_null_fpr_10000.json": "be09ad0747b1d5027a3fa96ff1e5b3bc7815d090e7c041c2f32ab9fc00a94382",
+      "benchmarks/run_selected_five_null_fpr_32shards.sh": "1bcd3134daac0a9d3d94ef42320b7439cb516088c6d16286820ef9a58fc89228",
+      "examples/selected_five_null_fpr_10000_cpu32.ps1": "28cbe6691e2d1dbf21f5966f5e2fb5f192bbeb2fbe952ab1096bdd1eda1c3b5b",
+      "pyproject.toml": "7a6a1ff3da0d404d26aaed8b0de1105c19d371ee96f66f814c244b7dea9737c3",
+      "benchmarks/fpr_frozen/benchmark.py": "4c04206532ed082064b98427b431b34b7a965ac5890465784a461e3191098d05",
+      "benchmarks/fpr_frozen/si_shap/__init__.py": "9bf01e47823556e1b8d0bab69a47b77bf178c0aa09b087f6d1c7ed0f6bc81b56",
+      "benchmarks/fpr_frozen/si_shap/api.py": "e2b4f10f52c9fe309b99dcb6d67926e8b8acf8ccb2ae0255b3eec2cb6db1d931",
+      "benchmarks/fpr_frozen/si_shap/inference.py": "d9564e226ecfeb7ce455f10a4fa3886fcc84eac1952129d96355176c9c86ffef",
+      "benchmarks/fpr_frozen/si_shap/linear_shapley.py": "17642f81d1b6935390a686adc580386848c0822ec1c170c04a1856c8b8c00bde",
+      "benchmarks/fpr_frozen/si_shap/null_calibration.py": "483cc83a5f7505b86fa9d964737ce034824115ec16b0c37e7f9c7330f3b182f3",
+      "benchmarks/fpr_frozen/si_shap/plotting.py": "16af6aa6d5bf188a0ab695fd24a409c7719ca370cb4698a359f47d61e2e45009",
+      "benchmarks/fpr_frozen/si_shap/power.py": "20a34375bfee744689fe33bc4bc92350951ef33113f039e02df9facb64ca3685",
+      "benchmarks/fpr_frozen/si_shap/selection.py": "9e457120191d2b9c116e3f9da36f6c8f990f282b5656ffe4cda6de8cd0cc44aa",
+      "benchmarks/fpr_frozen/si_shap/selection_regions.py": "1a0cf34c5de02c58e51a86235a5d49d4b2cde0a9e2a7f9aa923bbb4fe4461dbc",
+      "benchmarks/fpr_frozen/si_shap/simulation.py": "7093605025a67187864066084dcb29fc360afce3674cd8d02174242069594135",
+      "benchmarks/fpr_frozen/source_hashes.json": "c8d25260463d432673de37f9351bdf59900079d5a9f89dd2896a9e04ca3da2ed",
+      "benchmarks/fpr_frozen/benchmark_configuration.json": "296927da0f1c56eb72729f47740b4af7ca9fd723a1abf905f408a5311b2e114c"
+    },
+    "pilot": false
+  }
+}

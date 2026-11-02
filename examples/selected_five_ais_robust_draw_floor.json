@@ -1,0 +1,5 @@
+{
+  "ais_strategy": "a_robust_draw_floor",
+  "reference": "outputs/selection_method_validation/exact_set/selected_five_methods_combined_ais_exact_mi30",
+  "output": "outputs/selection_method_validation/exact_set/selected_five_methods_robust_draw_floor_ais_exact_mi30"
+}

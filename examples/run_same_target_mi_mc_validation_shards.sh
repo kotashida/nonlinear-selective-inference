@@ -27,7 +27,7 @@ if [[ ! -x "$PYTHON_BIN" ]] && ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
 fi
 export PYTHON_BIN
 
-export OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_method_validation_same_target_mi_mc_shards}"
+export OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_method_validation/same_target/mutual_information_mcmc}"
 export PRESET="comprehensive"
 export METHODS="mutual_information marginal_screening"
 export DESIGNS="baseline"

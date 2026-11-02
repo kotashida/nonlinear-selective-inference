@@ -1,0 +1,19 @@
+{
+  "experiment": "selected_five_null_fpr_10000_cpu32_20260928",
+  "output_root": "outputs/benchmarks/selected_five_null_fpr_10000_cpu32_20260928",
+  "reference_output": "outputs/benchmarks/selected_five_kde2p5_1000_cpu32_20260924",
+  "sample_size": 100,
+  "n_features": 20,
+  "repetitions": 10000,
+  "master_seed": 20260928,
+  "n_shards": 32,
+  "cpu_budget": 32,
+  "numerical_threads_per_worker": 1,
+  "alpha_levels": [0.01, 0.05, 0.1],
+  "primary_alpha": 0.05,
+  "methods": ["shap_ais", "lime_40_ais", "spline_screening_ais", "spline_screening_exact", "mutual_information_kde_2p5_ais"],
+  "expected_tests": 50000,
+  "null_dgp": "Each trial redraws X_ij iid N(0,1) and y_i iid N(0,1), independently; mu=0, known sigma=1; no response standardization or missingness. X is fixed during selection and inference within a trial.",
+  "failure_policy": "Keep every attempted trial; report finite-only FPR, all-attempt rejection rate, failures, and bounds treating all failures as rejections/nonrejections. Never infer control from failure-as-nonrejection alone.",
+  "source_policy": "Use the frozen package recovered from the original September 24 benchmark upload, checked against all three archived core hashes."
+}

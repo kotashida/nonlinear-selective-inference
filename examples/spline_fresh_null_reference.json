@@ -1,0 +1,70 @@
+{
+  "ais_strategy": "a_robust_draw_floor",
+  "alpha_levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "auxiliary_randomization_mode": "redrawn_each_iteration",
+  "design_seed": 3405814020,
+  "feature_correlation": 0.0,
+  "final_batch_size": 800,
+  "fixed_auxiliary_u": null,
+  "fixed_design": true,
+  "inference_method": "ais",
+  "iteration_start": 0,
+  "k_select": 2,
+  "max_final_samples": 51200,
+  "mcmc_global_jump_probability": 0.1,
+  "mcmc_step_scales": [
+    0.25,
+    0.5,
+    1.0,
+    2.0
+  ],
+  "mcmc_steps": 20,
+  "min_denominator_ess": 80.0,
+  "min_tail_ess": 15.0,
+  "multiplicity": "none",
+  "n_features": 20,
+  "n_iters": 7,
+  "n_samples": 100,
+  "pilot_iters": 10,
+  "pilot_samples": 320,
+  "rf_params": null,
+  "runtime_metadata": {
+    "git_commit": null,
+    "git_dirty": null,
+    "package_versions": {
+      "matplotlib": "3.11.0",
+      "numpy": "1.26.4",
+      "pandas": "3.0.3",
+      "patsy": "1.0.2",
+      "scikit-learn": "1.9.0",
+      "scipy": "1.17.1",
+      "shap": "0.49.1",
+      "si-shap": "0.1.0",
+      "tqdm": "4.68.4"
+    },
+    "platform": "Linux-6.8.0-87-generic-x86_64-with-glibc2.35",
+    "python_version": "3.11.15 (main, Jul 18 2026, 17:02:49) [Clang 22.1.3 ]"
+  },
+  "seed": 3265796664,
+  "selection_decimals": 10,
+  "selection_events": [
+    "exact_set"
+  ],
+  "selection_method": "spline_screening",
+  "selector_settings": {
+    "importance": "centered_cubic_bspline_projection_norm",
+    "selection_method": "spline_screening",
+    "selector": "SplineScreeningSelector",
+    "spline_degree": 3,
+    "spline_df": 3,
+    "tie_breaking": "decreasing_importance_then_increasing_feature_index"
+  },
+  "sigma": 1.0,
+  "stop_when_ess_met": true,
+  "target_rule": "uniform_from_selected",
+  "variance_method": "known_simulation_sigma"
+}

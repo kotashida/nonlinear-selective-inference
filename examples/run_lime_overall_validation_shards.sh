@@ -7,7 +7,7 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-export OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/lime_overall_validation_shards}"
+export OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_method_validation/lime_overall}"
 export PRESET="comprehensive"
 export METHODS="lime"
 export DESIGNS="baseline"

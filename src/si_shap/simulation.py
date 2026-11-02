@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 
 from .api import adjust_p_values, selective_inference
 from .inference import _chi_statistic, _spline_effect_basis
-from .selection import _resolve_rf_params, _validate_selection_event, make_selector
+from .selection import LinearShapleySelector, _resolve_rf_params, _validate_selection_event, make_selector
 
 
 SIMULATION_SIGMA = 1.0
@@ -340,6 +340,7 @@ def run_simulation(
         rf_params=resolved_rf_params,
     )
     selector_display = {
+        "linear_shapley": "Linear Shapley",
         "lime": "LIME",
         "mutual_information": "Mutual information",
         "marginal_screening": "Marginal screening",
@@ -412,9 +413,11 @@ def run_simulation(
 
         random_iteration = []
         for feature in random_selected:
-            basis = _spline_effect_basis(X[:, feature])
+            basis = (resolved_selector.statistic(X).support_basis(int(feature))
+                     if isinstance(resolved_selector, LinearShapleySelector)
+                     else _spline_effect_basis(X[:, feature]))
             statistic, _ = _chi_statistic(response, basis)
-            random_iteration.append(stats.chi.sf(statistic, df=basis.shape[1]))
+            random_iteration.append(1.0 if basis.shape[1] == 0 else stats.chi.sf(statistic, df=basis.shape[1]))
         random_p_values.append(
             adjust_p_values(np.asarray(random_iteration), multiplicity)
         )

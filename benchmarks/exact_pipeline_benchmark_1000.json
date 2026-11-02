@@ -1,0 +1,28 @@
+{
+  "experiment": "selected_five_kde2p5_1000_cpu32_20260924",
+  "reference_output": "outputs/selection_method_validation/exact_set/selected_five_kde2p5_300_20260923",
+  "output_root": "outputs/benchmarks/selected_five_kde2p5_1000_cpu32_20260924",
+  "datasets": [
+    "heating_load",
+    "cooling_load",
+    "gas_turbine",
+    "red_wine",
+    "white_wine",
+    "abalone",
+    "concrete",
+    "housing"
+  ],
+  "methods": [
+    "shap_ais",
+    "lime_40_ais",
+    "spline_screening_ais",
+    "spline_screening_exact",
+    "mutual_information_kde_2p5_ais"
+  ],
+  "sample_size": 100,
+  "repetitions": 1000,
+  "n_shards": 32,
+  "cpu_budget": 32,
+  "master_seed": 20260908,
+  "expected_tests": 40000
+}

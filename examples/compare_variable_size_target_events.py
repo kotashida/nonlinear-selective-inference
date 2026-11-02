@@ -46,8 +46,8 @@ from si_shap.selection import target_from_selected_set
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_DIR = (
-    PROJECT_ROOT / "outputs" / "variable_size_selection_event_counterexample"
+DEFAULT_OUTPUT_ROOT = (
+    PROJECT_ROOT / "outputs" / "selection_event_comparison" / "variable_size"
 )
 METHODS = (
     "feature_inclusion",
@@ -452,11 +452,7 @@ def main(argv=None):
     )
     output_dir = args.output_dir
     if output_dir is None:
-        output_dir = (
-            DEFAULT_OUTPUT_DIR
-            if args.large_set_size == 2
-            else Path(f"{DEFAULT_OUTPUT_DIR}_k{args.large_set_size}")
-        )
+        output_dir = DEFAULT_OUTPUT_ROOT / f"k_{args.large_set_size}"
     output_dir = write_results(result, output_dir)
     print(result["summary"].to_string(index=False))
     print(f"\nSaved results to {output_dir}")

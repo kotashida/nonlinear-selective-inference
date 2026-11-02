@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Reproduce the baseline / fresh auxiliary / same_target validation slice used
-# in selection_method_validation_combined_analysis, for spline screening only.
+# in the same-target combined analysis, for spline screening only.
 # Spline screening is single-threaded, so PARALLEL_SHARDS is the CPU-core cap.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,7 +27,7 @@ if [[ ! -x "$PYTHON_BIN" ]] && ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
 fi
 export PYTHON_BIN
 
-export OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_method_validation_same_target_spline_screening_shards}"
+export OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/selection_method_validation/same_target/spline_screening}"
 export PRESET="comprehensive"
 export METHODS="spline_screening"
 export DESIGNS="baseline"

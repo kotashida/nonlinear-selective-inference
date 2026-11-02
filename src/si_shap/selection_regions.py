@@ -23,6 +23,7 @@ from .inference import (
     _spline_effect_basis,
 )
 from .selection import (
+    LinearShapleySelector,
     _BUILTIN_SELECTOR_TYPES,
     _resolve_rf_params,
     _top_k,
@@ -366,7 +367,9 @@ def compute_selection_regions(
         for selected_feature in tested_features:
             feature = int(selected_feature)
             selection_position = position_by_feature[feature]
-            basis = _spline_effect_basis(X[:, feature])
+            basis = (resolved_selector.statistic(X).support_basis(int(feature))
+                     if isinstance(resolved_selector, LinearShapleySelector)
+                     else _spline_effect_basis(X[:, feature]))
             rank = int(basis.shape[1])
             t_obs, projected = _chi_statistic(response, basis)
             projected_norm = float(np.linalg.norm(projected))

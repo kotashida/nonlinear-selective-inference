@@ -21,6 +21,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import mutual_info_regression
 
 from .inference import _spline_effect_basis
+from .linear_shapley import LinearShapleyStatistic
 
 
 MAX_CPU_CORES = 32
@@ -455,7 +456,8 @@ class LimeSelector:
 class MutualInformationSelector:
     """Top-k screening by estimated feature-response mutual information."""
 
-    def __init__(self, *, random_state: int = 42, n_neighbors: int = 3):
+    def __init__(self, *, random_state: int = 42, n_neighbors: int = 3,
+                 estimator: str = "knn", n_bins: int = 5, bandwidth: float = 1.0):
         if (
             isinstance(random_state, (bool, np.bool_))
             or not isinstance(random_state, (int, np.integer))
@@ -470,13 +472,70 @@ class MutualInformationSelector:
             raise ValueError("n_neighbors must be a positive integer.")
         self.random_state = int(random_state)
         self.n_neighbors = int(n_neighbors)
+        if estimator not in ("knn", "histogram", "kde"):
+            raise ValueError("estimator must be knn, histogram, or kde.")
+        if isinstance(n_bins, (bool, np.bool_)) or not isinstance(n_bins, (int, np.integer)) or n_bins < 2:
+            raise ValueError("n_bins must be an integer >= 2.")
+        if not np.isfinite(bandwidth) or bandwidth <= 0:
+            raise ValueError("bandwidth must be finite and positive.")
+        self.estimator = estimator
+        self.n_bins = int(n_bins)
+        self.bandwidth = float(bandwidth)
+        self._mi_cached_X = None
+        self._mi_cached_features = None
+
+    def _quantile_codes(self, values):
+        # Identical values stay together, including at repeated quantile edges.
+        edges = np.unique(np.quantile(values, np.arange(1, self.n_bins) / self.n_bins))
+        return np.searchsorted(edges, values, side="right")
+
+    def _kernel(self, values):
+        scale = np.std(values, ddof=1)
+        if scale == 0:
+            standardized = np.zeros_like(values)
+        else:
+            standardized = (values - np.mean(values)) / scale
+        h = self.bandwidth * len(values) ** (-1.0 / 6.0)
+        kernel = np.exp(-0.5 * ((standardized[:, None] - standardized[None, :]) / h) ** 2)
+        np.fill_diagonal(kernel, 0.0)  # Leave-one-out density evaluation.
+        return kernel
+
+    def _alternative_scores(self, X, response):
+        if len(response) < 3 or not np.isfinite(X).all() or not np.isfinite(response).all():
+            raise ValueError("Alternative MI estimators require >= 3 finite observations.")
+        if self._mi_cached_X is None or not np.array_equal(X, self._mi_cached_X):
+            transform = self._quantile_codes if self.estimator == "histogram" else self._kernel
+            self._mi_cached_features = np.asarray([transform(column) for column in X.T])
+            self._mi_cached_X = X.copy()
+        # Always recompute response-dependent quantities inside AIS.
+        if self.estimator == "histogram":
+            y_codes = self._quantile_codes(response)
+            scores = []
+            for x_codes in self._mi_cached_features:
+                counts = np.bincount(x_codes * self.n_bins + y_codes,
+                                     minlength=self.n_bins ** 2).reshape(self.n_bins, self.n_bins)
+                probability = counts / len(response)
+                independent = probability.sum(axis=1)[:, None] * probability.sum(axis=0)[None, :]
+                positive = probability > 0
+                scores.append(np.sum(probability[positive] * np.log(probability[positive] / independent[positive])))
+            return np.maximum(scores, 0.0)
+        y_kernel = self._kernel(response)
+        x_kernel = self._mi_cached_features
+        # Product Gaussian KDE; common bandwidth in standardized coordinates
+        # for joint and marginals, so normalization constants cancel exactly.
+        joint = np.einsum("pij,ij->pi", x_kernel, y_kernel)
+        denominator = x_kernel.sum(axis=2) * y_kernel.sum(axis=1)[None, :]
+        tiny = np.finfo(float).tiny
+        log_ratio = (np.log(np.maximum(joint, tiny)) + np.log(len(response) - 1)
+                     - np.log(np.maximum(denominator, tiny)))
+        return np.maximum(log_ratio.mean(axis=1), 0.0)
 
     def select(self, X, response, k_select) -> SelectionResult:
         X = np.asarray(X, dtype=float)
         response = np.asarray(response, dtype=float)
         if X.ndim != 2 or response.ndim != 1 or X.shape[0] != response.size:
             raise ValueError("X must be two-dimensional and match the response.")
-        scores = mutual_info_regression(
+        scores = self._alternative_scores(X, response) if self.estimator != "knn" else mutual_info_regression(
             X,
             response,
             discrete_features=False,
@@ -488,6 +547,18 @@ class MutualInformationSelector:
         return SelectionResult(selected, scores, ranking)
 
     def get_settings(self) -> Mapping[str, Any]:
+        if self.estimator != "knn":
+            return {
+                "selector": type(self).__name__, "selection_method": "mutual_information",
+                "importance": "mutual_information_" + self.estimator,
+                "estimator": self.estimator,
+                "tie_breaking": "decreasing_importance_then_increasing_feature_index",
+                **({"n_bins": self.n_bins, "binning": "empirical_quantile", "bias_correction": "none"}
+                   if self.estimator == "histogram" else
+                   {"bandwidth_multiplier": self.bandwidth, "bandwidth_rule": "n^(-1/6)",
+                    "standardization": "sample_sd", "density_evaluation": "leave_one_out",
+                    "kernel": "product_gaussian", "negative_estimates": "clip_to_zero"}),
+            }
         return {
             "selector": type(self).__name__,
             "selection_method": "mutual_information",
@@ -587,12 +658,48 @@ class SplineScreeningSelector:
         }
 
 
+class LinearShapleySelector:
+    """Top-k selection by linear RSS Shapley quadratic contributions.
+
+    A copy of the design guards the cache against in-place edits to X.
+    Configure exact/Monte Carlo computation with LinearShapleyStatistic options.
+    """
+
+    def __init__(self, *, mode="auto", exact_max_features=10,
+                 n_permutations=1000, random_state=42, fit_intercept=True):
+        self.options = dict(mode=mode, exact_max_features=exact_max_features,
+                            n_permutations=n_permutations,
+                            random_state=random_state, fit_intercept=fit_intercept)
+        self._statistic = None
+
+    def statistic(self, X):
+        X = np.asarray(X, dtype=float)
+        if self._statistic is None or not np.array_equal(X, self._statistic.X):
+            self._statistic = LinearShapleyStatistic(X, **self.options)
+        return self._statistic
+
+    def select(self, X, response, k_select):
+        scores = self.statistic(X).scores(response)
+        ranking = _top_k(scores, scores.size)
+        selected = _top_k(scores, k_select)
+        return SelectionResult(selected, scores, ranking)
+
+    def get_settings(self):
+        return {"selector": type(self).__name__,
+                "selection_method": "linear_shapley",
+                "importance": "linear_shapley_rss_contribution",
+                "tie_breaking": "decreasing_importance_then_increasing_feature_index",
+                **self.options,
+                "resolved_mode": None if self._statistic is None else self._statistic.mode}
+
+
 _BUILTIN_SELECTOR_TYPES = (
     ShapSelector,
     LimeSelector,
     MutualInformationSelector,
     MarginalCorrelationSelector,
     SplineScreeningSelector,
+    LinearShapleySelector,
 )
 
 
@@ -635,7 +742,7 @@ def make_selector(
 
     The built-in methods are ``shap`` (the backward-compatible default),
     ``lime``, ``mutual_information``, ``marginal_screening``, and
-    ``spline_screening``.
+    ``spline_screening``, and ``linear_shapley``.
     """
     supplied = sum(value is not None for value in (estimator, selector, rf_params))
     if supplied > 1:
@@ -653,10 +760,11 @@ def make_selector(
         "mutual_information",
         "marginal_screening",
         "spline_screening",
+        "linear_shapley",
     }:
         raise ValueError(
             "selection_method must be 'shap', 'lime', 'mutual_information', "
-            "'marginal_screening', or 'spline_screening'."
+            "'marginal_screening', 'spline_screening', or 'linear_shapley'."
         )
     if method not in {"shap", "lime"} and (
         estimator is not None or rf_params is not None
@@ -670,6 +778,8 @@ def make_selector(
         return MarginalCorrelationSelector()
     if method == "spline_screening":
         return SplineScreeningSelector()
+    if method == "linear_shapley":
+        return LinearShapleySelector()
     if rf_params is not None:
         estimator = RandomForestRegressor(**_resolve_rf_params(rf_params))
     if method == "lime":

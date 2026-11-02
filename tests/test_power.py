@@ -33,7 +33,10 @@ def test_example_defaults_to_repository_outputs_folder():
     args = power_example.parse_args([])
 
     assert args.output_dir == (
-        power_example.PROJECT_ROOT / "outputs" / "selection_event_power"
+        power_example.PROJECT_ROOT
+        / "outputs"
+        / "selection_event_comparison"
+        / "power"
     )
     assert args.preset == "calibrated"
     assert args.n_iters == 100

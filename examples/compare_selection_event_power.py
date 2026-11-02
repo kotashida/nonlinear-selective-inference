@@ -32,7 +32,7 @@ from si_shap import compare_selection_event_power
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "selection_event_power"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "selection_event_comparison" / "power"
 PRESETS = {
     "quick": {
         "n_iters": 10,

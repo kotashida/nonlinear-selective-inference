@@ -1,0 +1,42 @@
+{
+  "experiment": "shap_sampling_followup_20261005",
+  "output_root": "outputs/selection_method_validation/exact_set/shap_sampling_followup_20261005",
+  "workers": 32,
+  "shards": 32,
+  "base_seed": 2026100501,
+  "diagnostic_seed": 2026100591,
+  "alpha": 0.05,
+  "design": {"n_samples": 100, "n_features": 20, "k_select": 2, "feature_correlation": 0.0},
+  "rf_params": {"n_estimators": 50, "max_depth": 5, "random_state": 42, "n_jobs": 1},
+  "selection_event": "exact_set",
+  "target_rule": "uniform_from_selected",
+  "selection_decimals": 10,
+  "sigma": 1.0,
+  "multiplicity": "none",
+  "conditions": [
+    {"name": "null", "iterations": 500, "beta": 0.0},
+    {"name": "beta_0.35", "iterations": 250, "beta": 0.35},
+    {"name": "beta_0.6", "iterations": 250, "beta": 0.6}
+  ],
+  "ais": {"pilot_iters": 10, "pilot_samples": 320, "batch_size": 800,
+          "allocation_cap": 51200, "draw_floor": 128,
+          "min_denominator_ess": 80.0, "min_tail_ess": 15.0},
+  "mcmc": {"step_scales": [0.25, 0.5, 1.0, 2.0], "global_jump_probability": 0.1},
+  "arms": [
+    {"name": "ais_reference", "method": "ais", "variant": "reference", "early_stop": true, "final_cap": 51200, "sampler_salt": 1},
+    {"name": "ais_stable", "method": "ais", "variant": "stable", "early_stop": true, "final_cap": 51200, "sampler_salt": 2},
+    {"name": "ais_preserve", "method": "ais", "variant": "preserve", "early_stop": true, "final_cap": 51200, "sampler_salt": 3},
+    {"name": "ais_reference_fixed", "method": "ais", "variant": "reference", "early_stop": false, "final_cap": 12800, "sampler_salt": 1},
+    {"name": "mcmc_parallel_20", "method": "mcmc", "construction": "parallel", "replicas": 511, "steps": 20, "sampler_salt": 5},
+    {"name": "mcmc_parallel_100", "method": "mcmc", "construction": "parallel", "replicas": 511, "steps": 100, "sampler_salt": 6},
+    {"name": "mcmc_serial_100", "method": "mcmc", "construction": "serial", "replicas": 511, "steps": 100, "sampler_salt": 7}
+  ],
+  "diagnostics": {"fixtures": "examples/shap_sampling_followup_inputs/cases.json", "map_budget": 4096,
+                  "replay_seeds": 2, "ais_final_cap": 12800},
+  "budget_reference": {"recorded_candidate_evaluations": 114049600,
+                       "forecast_using_previous_mean_ais_draws": 136052128,
+                       "fresh_fixed_evaluation_subtotal": 128540000,
+                       "fresh_max_candidate_evaluations": 282140000,
+                       "diagnostic_max_candidate_evaluations": 2580928,
+                       "comparison": "Similar expected candidate work; runtime is not guaranteed. Shared-pilot and paired-prefix cache reuse are separately counted."}
+}

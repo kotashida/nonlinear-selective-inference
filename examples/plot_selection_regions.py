@@ -86,7 +86,7 @@ def parse_args(argv=None):
 def main():
     args = parse_args()
     rf_params = _rf_parameters(args.rf_param)
-    output_directory = PROJECT_ROOT / "outputs" / "shap_selection_regions"
+    output_directory = PROJECT_ROOT / "outputs" / "selection_regions" / "shap"
     output_directory.mkdir(parents=True, exist_ok=True)
 
     results = compute_selection_regions(

@@ -1,0 +1,64 @@
+{
+  "shapley": {
+    "benchmarks/rbf_network.py": {
+      "recorded": "98ad7b996eaaee9d515c9371a51ddefb738df536a700fa1a49b60b5439083c49",
+      "current": "98ad7b996eaaee9d515c9371a51ddefb738df536a700fa1a49b60b5439083c49",
+      "match": true
+    },
+    "benchmarks/rbf_ridge_cv.py": {
+      "recorded": "36c277c864cb0e1fc99a632e960083db5a6fa37649fb5f7296b8f4c16d476b1c",
+      "current": "36c277c864cb0e1fc99a632e960083db5a6fa37649fb5f7296b8f4c16d476b1c",
+      "match": true
+    },
+    "benchmarks/rbf_ridge_cv_n25_50_75_cpu32_20261028.json": {
+      "recorded": "98db4aa43dcbb3699d802ef0daa6b3565a258e3afccbba7526024f80531a2ec7",
+      "current": "98db4aa43dcbb3699d802ef0daa6b3565a258e3afccbba7526024f80531a2ec7",
+      "match": true
+    },
+    "benchmarks/rbf_ridge_cv_n25_50_75_smoke_cpu32_20261028.json": {
+      "recorded": "38edaabe0045112fe60786db9e18b7d7caa27dbe83580e188d0c5fec7a8d381b",
+      "current": "38edaabe0045112fe60786db9e18b7d7caa27dbe83580e188d0c5fec7a8d381b",
+      "match": true
+    },
+    "benchmarks/run_rbf_ridge_cv_study.py": {
+      "recorded": "4922bcf02f2c1494eb8b85f2c19f2f50787fd51ea32653ddddc24f547c9c6cbd",
+      "current": "4922bcf02f2c1494eb8b85f2c19f2f50787fd51ea32653ddddc24f547c9c6cbd",
+      "match": true
+    },
+    "benchmarks/run_rbf_shapley.py": {
+      "recorded": "c69cd5cf852b7d0d66d901e1f49ed02456bdc614caddb3c08655489b08861a7a",
+      "current": "c69cd5cf852b7d0d66d901e1f49ed02456bdc614caddb3c08655489b08861a7a",
+      "match": true
+    },
+    "benchmarks/table_dataset.pkl": {
+      "recorded": "9f2276d10cfa1110929429361f505627133359012446aa78016ea55ba9805729",
+      "current": "9f2276d10cfa1110929429361f505627133359012446aa78016ea55ba9805729",
+      "match": true
+    },
+    "docs/commands.md": {
+      "recorded": "a7921c93daa2734bfbaf8fbc419583158eac2e4ecbaae3a8bd7e920c950ae741",
+      "current": "a7921c93daa2734bfbaf8fbc419583158eac2e4ecbaae3a8bd7e920c950ae741",
+      "match": true
+    },
+    "docs/rbf_ridge_cv_n25_50_75_study.md": {
+      "recorded": "033b70756a0010ff1d1e711f5ed11aab931a24184810fab275c74e1a2a91699f",
+      "current": "033b70756a0010ff1d1e711f5ed11aab931a24184810fab275c74e1a2a91699f",
+      "match": true
+    },
+    "examples/plot_rbf_ridge_cv_study.py": {
+      "recorded": "e7a411904386a35f0c91a7cd45f4bb4ba7cea1a56c760ab9eb680f86dd2c145a",
+      "current": "5f7c169e36d46285951a49c56329c9af8f8cba3107d6d4ff96364be4b154e6ff",
+      "match": false
+    },
+    "examples/rbf_ridge_cv_n25_50_75_cpu32.ps1": {
+      "recorded": "e353acda2ee715193b9cf103d656023ec7d94bd040c587a52ba32b3a753af438",
+      "current": "e353acda2ee715193b9cf103d656023ec7d94bd040c587a52ba32b3a753af438",
+      "match": true
+    },
+    "tests/test_rbf_ridge_cv_study.py": {
+      "recorded": "c7a26c834894ae8fb3d935fb4abd82d59f00f35643766f074d4cfc30c0a5c8a6",
+      "current": "c7a26c834894ae8fb3d935fb4abd82d59f00f35643766f074d4cfc30c0a5c8a6",
+      "match": true
+    }
+  }
+}

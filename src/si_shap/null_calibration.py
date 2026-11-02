@@ -277,6 +277,7 @@ def compare_selection_event_null_calibration(
     seed: int = 123,
     iteration_start: int = 0,
     design_seed: int | None = None,
+    sampler_seed_salt: int = 0,
     fixed_auxiliary_u: float | None = None,
     selection_decimals: int = 10,
     pilot_iters: int = 3,
@@ -294,6 +295,7 @@ def compare_selection_event_null_calibration(
     selector=None,
     inference_method: str = "conditional_mc",
     stop_when_ess_met: bool = False,
+    ais_strategy: str = "baseline",
 ):
     """Evaluate paired single-target selective p-values under the global null.
 
@@ -433,6 +435,10 @@ def compare_selection_event_null_calibration(
             target_seed.generate_state(1, dtype=np.uint32)[0]
         )
         shared_ais_seed = int(ais_seed.generate_state(1, dtype=np.uint32)[0])
+        if sampler_seed_salt:
+            shared_ais_seed = int(np.random.SeedSequence(
+                [shared_ais_seed, sampler_seed_salt]
+            ).generate_state(1, dtype=np.uint32)[0])
         iteration_selector = (
             _MemoizedSelector(resolved_selector)
             if isinstance(resolved_selector, _BUILTIN_SELECTOR_TYPES)
@@ -482,6 +488,7 @@ def compare_selection_event_null_calibration(
                     mcmc_step_scales=mcmc_step_scales,
                     mcmc_global_jump_probability=mcmc_global_jump_probability,
                     stop_when_ess_met=stop_when_ess_met,
+                    ais_strategy=ais_strategy,
                 )
             returned_selected = tuple(
                 int(feature) for feature in result["observed_selected_features"]
@@ -559,6 +566,7 @@ def compare_selection_event_null_calibration(
             "mcmc_global_jump_probability": mcmc_global_jump_probability,
             "alpha_levels": levels,
             "seed": int(seed),
+            "sampler_seed_salt": sampler_seed_salt,
             "design_seed": resolved_design_seed,
             "fixed_design": True,
             "selection_decimals": selection_decimals,
@@ -576,5 +584,6 @@ def compare_selection_event_null_calibration(
             "min_denominator_ess": min_denominator_ess,
             "min_tail_ess": min_tail_ess,
             "stop_when_ess_met": bool(stop_when_ess_met),
+            "ais_strategy": ais_strategy,
         },
     }

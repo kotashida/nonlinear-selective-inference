@@ -1,11 +1,13 @@
 """Selective inference under explicit conditioning assumptions."""
 
 from .api import adjust_p_values, selective_inference
+from .linear_shapley import LinearShapleyStatistic
 from .null_calibration import compare_selection_event_null_calibration
 from .plotting import plot_results, plot_selection_regions
 from .power import compare_selection_event_power
 from .selection import (
     LimeSelector,
+    LinearShapleySelector,
     MarginalCorrelationSelector,
     MutualInformationSelector,
     SelectionResult,
@@ -29,6 +31,8 @@ __all__ = [
     "Selector",
     "ShapSelector",
     "LimeSelector",
+    "LinearShapleySelector",
+    "LinearShapleyStatistic",
     "MutualInformationSelector",
     "MarginalCorrelationSelector",
     "SplineScreeningSelector",

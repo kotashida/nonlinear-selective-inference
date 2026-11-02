@@ -37,18 +37,24 @@ from examples.compare_selection_event_power import (
     _write_results_to_directory as _write_power_results,
 )
 from si_shap import (
+    LimeSelector,
+    MutualInformationSelector,
     compare_selection_event_null_calibration,
     compare_selection_event_power,
 )
+from si_shap.inference import AIS_STRATEGIES
 
 
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "selection_method_validation"
+DEFAULT_OUTPUT_DIR = (
+    PROJECT_ROOT / "outputs" / "selection_method_validation" / "default_run"
+)
 METHODS = (
     "shap",
     "lime",
     "mutual_information",
     "marginal_screening",
     "spline_screening",
+    "linear_shapley",
 )
 DESIGNS = {
     "baseline": {
@@ -225,6 +231,26 @@ def _method_inference_method(
     return inference_method
 
 
+def _selector_arguments(method: str, mi_neighbors: int, lime_params=None, rf_jobs=32, mi_params=None) -> dict:
+    """Return mutually exclusive selector arguments for the public APIs."""
+    if method == "lime":
+        from sklearn.ensemble import RandomForestRegressor
+        from si_shap.selection import RF_PARAMS
+        return {
+            "selection_method": None,
+            "selector": LimeSelector(
+                RandomForestRegressor(**{**RF_PARAMS, "n_jobs": rf_jobs}),
+                **(lime_params or {}),
+            ),
+        }
+    if method == "mutual_information":
+        return {
+            "selection_method": None,
+            "selector": MutualInformationSelector(n_neighbors=mi_neighbors, **(mi_params or {})),
+        }
+    return {"selection_method": method, "selector": None}
+
+
 def _load_or_run_null(
     output_dir: Path,
     *,
@@ -235,7 +261,17 @@ def _load_or_run_null(
     fixed_auxiliary_u: float | None,
     max_final_samples: int,
     inference_method: str = "mcmc_rank",
+    pilot_iters: int = 3,
+    pilot_samples: int = 40,
+    final_batch_size: int = 80,
+    min_denominator_ess: float = 80.0,
+    min_tail_ess: float = 15.0,
+    stop_when_ess_met: bool = False,
+    ais_strategy: str = "baseline",
     mcmc_steps: int = 20,
+    mi_neighbors: int = 3,
+    mi_params: dict | None = None,
+    lime_params: dict | None = None,
     seed: int,
     design_seed: int | None = None,
     rf_jobs: int = 32,
@@ -244,20 +280,27 @@ def _load_or_run_null(
     result_path = output_dir / "p_value_results.csv"
     if result_path.is_file() and not overwrite:
         return pd.read_csv(result_path)
+    selector_arguments = _selector_arguments(method, mi_neighbors, lime_params, rf_jobs, mi_params)
     result = compare_selection_event_null_calibration(
         n_iters=n_iters,
         **design,
-        selection_method=method,
+        **selector_arguments,
         selection_events=selection_events,
         alpha_levels=ALPHA_LEVELS,
         fixed_auxiliary_u=fixed_auxiliary_u,
         seed=seed,
         design_seed=design_seed,
-        rf_params={"n_jobs": rf_jobs} if method in {"shap", "lime"} else None,
+        rf_params={"n_jobs": rf_jobs} if method == "shap" else None,
         inference_method=inference_method,
+        pilot_iters=pilot_iters,
+        pilot_samples=pilot_samples,
+        final_batch_size=final_batch_size,
         mcmc_steps=mcmc_steps,
-        final_batch_size=min(80, max_final_samples),
         max_final_samples=max_final_samples,
+        min_denominator_ess=min_denominator_ess,
+        min_tail_ess=min_tail_ess,
+        stop_when_ess_met=stop_when_ess_met,
+        ais_strategy=ais_strategy,
     )
     result["settings"]["runtime_metadata"] = _runtime_metadata()
     _write_null_results(result, output_dir)
@@ -275,7 +318,17 @@ def _load_or_run_power(
     signal_strength: float,
     max_final_samples: int,
     inference_method: str = "mcmc_rank",
+    pilot_iters: int = 3,
+    pilot_samples: int = 40,
+    final_batch_size: int = 80,
+    min_denominator_ess: float = 80.0,
+    min_tail_ess: float = 15.0,
+    stop_when_ess_met: bool = False,
+    ais_strategy: str = "baseline",
     mcmc_steps: int = 20,
+    mi_neighbors: int = 3,
+    mi_params: dict | None = None,
+    lime_params: dict | None = None,
     seed: int,
     rf_jobs: int = 32,
     selection_events: tuple[str, ...] = COMPARISON_EVENTS,
@@ -290,19 +343,26 @@ def _load_or_run_power(
             )
         return targets
     output_dir.parent.mkdir(parents=True, exist_ok=True)
+    selector_arguments = _selector_arguments(method, mi_neighbors, lime_params, rf_jobs, mi_params)
     result = compare_selection_event_power(
         n_iters=n_iters,
         **design,
         signal_features=(signal_feature,),
         signal_strength=signal_strength,
-        selection_method=method,
-        rf_params={"n_jobs": rf_jobs} if method in {"shap", "lime"} else None,
+        **selector_arguments,
+        rf_params={"n_jobs": rf_jobs} if method == "shap" else None,
         selection_events=selection_events,
         seed=seed,
         inference_method=inference_method,
+        pilot_iters=pilot_iters,
+        pilot_samples=pilot_samples,
+        final_batch_size=final_batch_size,
         mcmc_steps=mcmc_steps,
-        final_batch_size=min(80, max_final_samples),
         max_final_samples=max_final_samples,
+        min_denominator_ess=min_denominator_ess,
+        min_tail_ess=min_tail_ess,
+        stop_when_ess_met=stop_when_ess_met,
+        ais_strategy=ais_strategy,
     )
     result["settings"]["runtime_metadata"] = _runtime_metadata()
     _write_power_results(result, output_dir)
@@ -479,7 +539,7 @@ def parse_args(argv=None):
     parser.add_argument("--max-final-samples", type=int)
     parser.add_argument(
         "--inference-method",
-        choices=("conditional_mc", "mcmc_rank"),
+        choices=("conditional_mc", "mcmc_rank", "ais"),
         default="mcmc_rank",
     )
     parser.add_argument(
@@ -491,7 +551,33 @@ def parse_args(argv=None):
             "selection event is exact_set; otherwise inherit --inference-method"
         ),
     )
+    parser.add_argument("--lime-ridge-alpha", type=float, default=1.0)
+    parser.add_argument("--lime-kernel-width", type=float)
+    parser.add_argument("--lime-num-explanations", type=int, default=10)
     parser.add_argument("--mcmc-steps", type=int, default=20)
+    parser.add_argument("--pilot-iters", type=int, default=3)
+    parser.add_argument("--pilot-samples", type=int, default=40)
+    parser.add_argument("--final-batch-size", type=int, default=80)
+    parser.add_argument("--min-denominator-ess", type=float, default=80.0)
+    parser.add_argument("--min-tail-ess", type=float, default=15.0)
+    parser.add_argument(
+        "--stop-when-ess-met",
+        action="store_true",
+        help=(
+            "enable exploratory ESS-based early stopping; the default uses "
+            "the complete fixed final-sample budget"
+        ),
+    )
+    parser.add_argument("--ais-strategy", choices=AIS_STRATEGIES, default="baseline")
+    parser.add_argument("--mi-estimator", choices=("knn", "histogram", "kde"), default="knn")
+    parser.add_argument("--mi-bins", type=int, default=5)
+    parser.add_argument("--mi-bandwidth", type=float, default=1.0)
+    parser.add_argument(
+        "--mi-neighbors",
+        type=int,
+        default=3,
+        help="fixed k-nearest-neighbor count for mutual-information screening",
+    )
     parser.add_argument(
         "--auxiliary-values",
         nargs="+",
@@ -551,6 +637,17 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    lime_params = {
+        "ridge_alpha": args.lime_ridge_alpha,
+        "kernel_width": args.lime_kernel_width,
+        "num_explanations": args.lime_num_explanations,
+    }
+    if "lime" in args.methods:
+        _selector_arguments("lime", args.mi_neighbors, lime_params, args.rf_jobs)
+    mi_params = dict(estimator=args.mi_estimator, n_bins=args.mi_bins, bandwidth=args.mi_bandwidth)
+    MutualInformationSelector(n_neighbors=args.mi_neighbors, **mi_params)
+    if args.mi_neighbors < 1:
+        raise ValueError("--mi-neighbors must be a positive integer.")
     selection_events = tuple(args.selection_events)
     if not selection_events or len(set(selection_events)) != len(selection_events):
         raise ValueError("--selection-events must contain at least one unique event.")
@@ -616,7 +713,17 @@ def main(argv=None):
                     fixed_auxiliary_u=fixed_u,
                     max_final_samples=max_final_samples,
                     inference_method=method_inference,
+                    pilot_iters=args.pilot_iters,
+                    pilot_samples=args.pilot_samples,
+                    final_batch_size=args.final_batch_size,
+                    min_denominator_ess=args.min_denominator_ess,
+                    min_tail_ess=args.min_tail_ess,
+                    stop_when_ess_met=args.stop_when_ess_met,
+                    ais_strategy=args.ais_strategy,
                     mcmc_steps=args.mcmc_steps,
+                    mi_neighbors=args.mi_neighbors,
+                    mi_params=mi_params,
+                    lime_params=lime_params,
                     seed=_seed(args.seed, design_index, auxiliary_index),
                     design_seed=shared_design_seed,
                     rf_jobs=args.rf_jobs,
@@ -654,7 +761,17 @@ def main(argv=None):
                         signal_strength=strength,
                         max_final_samples=max_final_samples,
                         inference_method=method_inference,
+                        pilot_iters=args.pilot_iters,
+                        pilot_samples=args.pilot_samples,
+                        final_batch_size=args.final_batch_size,
+                        min_denominator_ess=args.min_denominator_ess,
+                        min_tail_ess=args.min_tail_ess,
+                        stop_when_ess_met=args.stop_when_ess_met,
+                        ais_strategy=args.ais_strategy,
                         mcmc_steps=args.mcmc_steps,
+                        mi_neighbors=args.mi_neighbors,
+                        mi_params=mi_params,
+                        lime_params=lime_params,
                         seed=_seed(
                             args.seed,
                             10_000,
@@ -700,7 +817,17 @@ def main(argv=None):
             )
             for method in args.methods
         },
+        "pilot_iters": args.pilot_iters,
+        "pilot_samples": args.pilot_samples,
+        "final_batch_size": args.final_batch_size,
+        "min_denominator_ess": args.min_denominator_ess,
+        "min_tail_ess": args.min_tail_ess,
+        "stop_when_ess_met": args.stop_when_ess_met,
+        "ais_strategy": args.ais_strategy,
         "mcmc_steps": args.mcmc_steps,
+        "mi_neighbors": args.mi_neighbors,
+        "mi_params": mi_params,
+        "lime_params": lime_params,
         "cross_method_randomness": "shared_data_target_and_monte_carlo_seeds",
         "fixed_auxiliary_values": fixed_auxiliary_values,
         "signal_strengths": signal_strengths,

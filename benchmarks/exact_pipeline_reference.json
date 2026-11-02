@@ -1,0 +1,17 @@
+{
+  "source": "outputs/selection_method_validation/exact_set/selected_five_kde2p5_300_20260923",
+  "selected_configuration": {
+    "methods": [
+      "shap_ais",
+      "lime_40_ais",
+      "spline_screening_ais",
+      "spline_screening_exact",
+      "mutual_information_kde_2p5_ais"
+    ]
+  },
+  "source_hashes": {
+    "src/si_shap/api.py": "e2b4f10f52c9fe309b99dcb6d67926e8b8acf8ccb2ae0255b3eec2cb6db1d931",
+    "src/si_shap/inference.py": "d9564e226ecfeb7ce455f10a4fa3886fcc84eac1952129d96355176c9c86ffef",
+    "src/si_shap/selection.py": "9e457120191d2b9c116e3f9da36f6c8f990f282b5656ffe4cda6de8cd0cc44aa"
+  }
+}

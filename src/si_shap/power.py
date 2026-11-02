@@ -21,6 +21,7 @@ from tqdm.auto import tqdm
 from .api import selective_inference
 from .inference import _spline_effect_basis
 from .selection import (
+    LinearShapleySelector,
     _BUILTIN_SELECTOR_TYPES,
     _MemoizedSelector,
     _resolve_rf_params,
@@ -329,6 +330,7 @@ def compare_selection_event_power(
     alpha: float = 0.05,
     seed: int = 123,
     iteration_start: int = 0,
+    sampler_seed_salt: int = 0,
     selection_decimals: int = 10,
     pilot_iters: int = 3,
     pilot_samples: int = 40,
@@ -346,6 +348,7 @@ def compare_selection_event_power(
     multiplicity: str = "none",
     inference_method: str = "conditional_mc",
     stop_when_ess_met: bool = False,
+    ais_strategy: str = "baseline",
 ):
     """Compare conditioning-event power on identical alternative datasets.
 
@@ -475,6 +478,10 @@ def compare_selection_event_power(
             return_mean=True,
         )
         shared_ais_seed = int(ais_seed.generate_state(1, dtype=np.uint32)[0])
+        if sampler_seed_salt:
+            shared_ais_seed = int(np.random.SeedSequence(
+                [shared_ais_seed, sampler_seed_salt]
+            ).generate_state(1, dtype=np.uint32)[0])
         shared_target_seed = int(target_seed.generate_state(1, dtype=np.uint32)[0])
         iteration_selector = (
             _MemoizedSelector(resolved_selector)
@@ -516,6 +523,7 @@ def compare_selection_event_power(
                     mcmc_step_scales=mcmc_step_scales,
                     mcmc_global_jump_probability=mcmc_global_jump_probability,
                     stop_when_ess_met=stop_when_ess_met,
+                    ais_strategy=ais_strategy,
                 )
             selected = tuple(
                 int(feature)
@@ -538,7 +546,9 @@ def compare_selection_event_power(
                 1.0, float(np.linalg.norm(mean_response))
             )
             for selected_feature in event_frame["feature"]:
-                basis = _spline_effect_basis(X[:, int(selected_feature)])
+                basis = (resolved_selector.statistic(X).support_basis(int(selected_feature))
+                         if isinstance(resolved_selector, LinearShapleySelector)
+                         else _spline_effect_basis(X[:, int(selected_feature)]))
                 projection_norm = float(np.linalg.norm(basis.T @ mean_response))
                 projection_norms.append(projection_norm)
                 fixed_design_null.append(projection_norm <= null_tolerance)
@@ -568,9 +578,11 @@ def compare_selection_event_power(
                     "iteration": iteration,
                     "selection_event": selection_event,
                     "target_feature": observed_target,
+                    "observed_selected_features": observed_selected,
                     "target_is_signal": target_is_signal,
                     "auxiliary_u": auxiliary_u,
                     "target_seed": shared_target_seed,
+                    "ais_seed": shared_ais_seed,
                     "p_value": float(row["p_value_used"]),
                     "failed": failed,
                     "rejected": rejected,
@@ -626,6 +638,7 @@ def compare_selection_event_power(
             ),
             "alpha": alpha,
             "seed": seed,
+            "sampler_seed_salt": sampler_seed_salt,
             "selection_decimals": selection_decimals,
             "selection_method": dict(resolved_selector.get_settings()).get(
                 "selection_method", "custom"
@@ -651,5 +664,6 @@ def compare_selection_event_power(
             "min_denominator_ess": min_denominator_ess,
             "min_tail_ess": min_tail_ess,
             "stop_when_ess_met": bool(stop_when_ess_met),
+            "ais_strategy": ais_strategy,
         },
     }

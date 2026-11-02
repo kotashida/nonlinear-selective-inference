@@ -17,7 +17,9 @@ from pathlib import Path
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["POLARS_MAX_THREADS"] = "1"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -43,10 +45,16 @@ from si_shap import (
 DEFAULT_SOURCE = (
     PROJECT_ROOT
     / "outputs"
-    / "selection_method_validation_same_target_spline_screening_shards"
+    / "selection_method_validation"
+    / "same_target"
+    / "spline_screening"
 )
 DEFAULT_OUTPUT = (
-    PROJECT_ROOT / "outputs" / "selection_method_validation_exact_spline_shards"
+    PROJECT_ROOT
+    / "outputs"
+    / "selection_method_validation"
+    / "exact_set"
+    / "exact_spline"
 )
 
 

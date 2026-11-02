@@ -45,13 +45,46 @@ def test_explicit_settings_override_preset():
             "exact_ranking",
         ]
     )
-
     assert resolve_experiments(args) == (
         (2, 5),
         ("shallow", "flexible"),
         ("feature_inclusion", "exact_ranking"),
     )
 
+
+def test_lime_uses_requested_selector_and_proposal_pilot(monkeypatch, tmp_path):
+    args = parse_args([
+        "101", "--selection-method", "lime",
+        "--proposal-pilot-iters", "10",
+        "--proposal-pilot-samples", "320",
+        "--output-dir", str(tmp_path),
+    ])
+    received = {}
+    monkeypatch.setattr(
+        sweep,
+        "compute_selection_regions",
+        lambda **kwargs: received.update(kwargs) or [object()],
+    )
+    monkeypatch.setattr(
+        sweep,
+        "selection_regions_frame",
+        lambda _results: pd.DataFrame({"seed": [101]}),
+    )
+    monkeypatch.setattr(
+        sweep,
+        "plot_selection_regions",
+        lambda _results, _path: plt.figure(),
+    )
+
+    result = sweep.run_experiment(args, 1, "baseline", "exact_set")
+
+    assert received["proposal_pilot_iters"] == 10
+    assert received["proposal_pilot_samples"] == 320
+    assert received["selector"].get_settings()["selection_method"] == "lime"
+    assert received["selector"].get_settings()["num_explanations"] == 40
+    assert received["selector"].get_settings()["num_samples"] == 64
+    assert result.loc[0, "selection_method"] == "lime"
+    assert (tmp_path / "lime_k1_baseline_exact_set" / "selection_regions.csv").is_file()
 
 def test_run_experiment_recreates_output_directory_before_saving(
     monkeypatch, tmp_path

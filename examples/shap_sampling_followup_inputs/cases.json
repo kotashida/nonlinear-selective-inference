@@ -1,0 +1,463 @@
+{
+  "cases": [
+    {
+      "case_id": "old_beta_0.75_s3_i1",
+      "file": "old_beta_0.75_s3_i1.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 0.75,
+      "auxiliary_u": 0.159449481770451,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        16
+      ],
+      "t_obs": 8.887697414227501,
+      "input_hash": "e390d81f5882c055fed6792bf98518292dcfebb7a00ce283a3f416143db40e73",
+      "previous_p_value": 0.0340014579570928,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_0.75_s4_i5",
+      "file": "old_beta_0.75_s4_i5.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 0.75,
+      "auxiliary_u": 0.3470156199314749,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        4
+      ],
+      "t_obs": 8.920833921677199,
+      "input_hash": "910a7f21c838b34721e116b6fef3f3c2d4039d51f00c0d0b4a8ea714ca4e65ba",
+      "previous_p_value": 1.2048632233664543e-11,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_0.75_s10_i3",
+      "file": "old_beta_0.75_s10_i3.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 0.75,
+      "auxiliary_u": 0.0924799112186509,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        17
+      ],
+      "t_obs": 8.64592284045699,
+      "input_hash": "d2d86eb47eb3a9c39b206d666c63fed33586f1c9f8cb1a529b9f4e5185c40d4a",
+      "previous_p_value": 2.8162452651187645e-12,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_0.75_s13_i7",
+      "file": "old_beta_0.75_s13_i7.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 0.75,
+      "auxiliary_u": 0.1740949329415384,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        14
+      ],
+      "t_obs": 7.549069571936778,
+      "input_hash": "d3a0de23b45c60645a05dc21f1a4738cf19e398b606ac159cbc77a67dfe3d08e",
+      "previous_p_value": 3.968076936180965e-08,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_0.75_s18_i3",
+      "file": "old_beta_0.75_s18_i3.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 0.75,
+      "auxiliary_u": 0.0870388718305011,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        18
+      ],
+      "t_obs": 8.567235826072954,
+      "input_hash": "12be81109d6cd8915ded46af539fdb26a894eb669359187cb1508bff5aa30102",
+      "previous_p_value": 0.0011490866655623,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s1_i4",
+      "file": "old_beta_1.0_s1_i4.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.4507262962813085,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        16
+      ],
+      "t_obs": 10.05833520569159,
+      "input_hash": "de9d4fa347ac82d7fcfa9599c25ecc082d2c94ed496b2006ac46d25bef790dd9",
+      "previous_p_value": 3.2721333787771435e-17,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s1_i5",
+      "file": "old_beta_1.0_s1_i5.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.3253074594933167,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        2
+      ],
+      "t_obs": 10.92563970647108,
+      "input_hash": "49482aa1c84437ba2d52ba4c981d13b6bc71154189d87eb723dd0dac833552d1",
+      "previous_p_value": 1.8303169507745368e-18,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s4_i6",
+      "file": "old_beta_1.0_s4_i6.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.4472799156636804,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        2
+      ],
+      "t_obs": 11.222669148957385,
+      "input_hash": "8cb8079c35a0de0164ff6045ac0e7b1b2cc33586b60b97a8d72e59f1c518b509",
+      "previous_p_value": 1.8280606764354804e-20,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s4_i8",
+      "file": "old_beta_1.0_s4_i8.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.4225868806938279,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        5
+      ],
+      "t_obs": 9.543314207335328,
+      "input_hash": "d306bb8033523df2689f4055c19c174aaee448294c5bd96ba84e603a2b04fab0",
+      "previous_p_value": 8.454579558274406e-13,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s12_i4",
+      "file": "old_beta_1.0_s12_i4.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.1793791247717062,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        12
+      ],
+      "t_obs": 9.83220941390906,
+      "input_hash": "a4b3e913d7e159b4e143fb01a052b125ae8dd4783d276456cf62262f54608fde",
+      "previous_p_value": 2.4231238987540044e-09,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s15_i3",
+      "file": "old_beta_1.0_s15_i3.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.4818419183837146,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        10
+      ],
+      "t_obs": 10.124444924961344,
+      "input_hash": "d92944207365be276f7517062273507d8a132670e4eaf1622155d69f4c8c26ef",
+      "previous_p_value": 2.9439121878960617e-19,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s16_i4",
+      "file": "old_beta_1.0_s16_i4.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.3822299922742169,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        6
+      ],
+      "t_obs": 11.525966556687132,
+      "input_hash": "a0d11b1d497016665c18226d77afde3a64433b7d7f987cd7aea9729917d7329f",
+      "previous_p_value": 3.7144547396248187e-17,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s17_i2",
+      "file": "old_beta_1.0_s17_i2.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.4359168299396584,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        6
+      ],
+      "t_obs": 10.251768543350703,
+      "input_hash": "d2a27c0ffae9d3df7570bfb2ae264b3fc6d97c38d456f83ed4850bbdb040e86c",
+      "previous_p_value": null,
+      "previous_status": "insufficient_ess"
+    },
+    {
+      "case_id": "old_beta_1.0_s19_i5",
+      "file": "old_beta_1.0_s19_i5.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.4451178690395286,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        18
+      ],
+      "t_obs": 10.232197065379085,
+      "input_hash": "178923ff41666188328eabb438eea8ee934956c83a311e3b55d898bb09bc7a89",
+      "previous_p_value": null,
+      "previous_status": "insufficient_ess"
+    },
+    {
+      "case_id": "old_beta_1.0_s19_i6",
+      "file": "old_beta_1.0_s19_i6.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.4747819264531349,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        2
+      ],
+      "t_obs": 9.19128665365677,
+      "input_hash": "5e853a330fc7e573f64cc2b0cb7f91dffd4b9b58bacce7a07b03fd1a4c5d3fc2",
+      "previous_p_value": 0.0025470434412943,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s23_i3",
+      "file": "old_beta_1.0_s23_i3.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.2832248846187978,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        12
+      ],
+      "t_obs": 11.392999678793752,
+      "input_hash": "1caf702dac1f8d63e615caac5703ae66a8f619c1c5d5b215676bbfc05ecdf257",
+      "previous_p_value": 2.0882355057658727e-25,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s26_i5",
+      "file": "old_beta_1.0_s26_i5.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.1889267782749732,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        3
+      ],
+      "t_obs": 9.302965760708364,
+      "input_hash": "53472a81342e2c51f38c9b2170e9598d68f1dffa9e1484db83bc55be008944fb",
+      "previous_p_value": 7.451917410032481e-13,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_beta_1.0_s27_i2",
+      "file": "old_beta_1.0_s27_i2.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.4006274248951109,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        4
+      ],
+      "t_obs": 9.98616183426042,
+      "input_hash": "f2ce831fb96f03e9d6c581bada427a3096c2297a1196dad460d0cc5a82ab9062",
+      "previous_p_value": null,
+      "previous_status": "insufficient_ess"
+    },
+    {
+      "case_id": "old_beta_1.0_s29_i3",
+      "file": "old_beta_1.0_s29_i3.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": 1.0,
+      "auxiliary_u": 0.1428571167144644,
+      "target_feature": 0,
+      "observed_selected_features": [
+        0,
+        18
+      ],
+      "t_obs": 11.128621375804611,
+      "input_hash": "05f091e3c572d35eca2c8cae2b288dcda1b9f9ebcc17cee4b48c7fe3aca29958",
+      "previous_p_value": 2.4702096466851073e-10,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "old_null_s9_i8",
+      "file": "old_null_s9_i8.npz",
+      "reason": "selected_difficult_synthetic",
+      "beta": null,
+      "auxiliary_u": 0.258659655115299,
+      "target_feature": 9,
+      "observed_selected_features": [
+        9,
+        16
+      ],
+      "t_obs": 3.6591654484023777,
+      "input_hash": "1c8e49e574292cbf10546605d24d8e4e322d6c4c05940f084ffb91c09da760fb",
+      "previous_p_value": 0.2968152603135867,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "energy_heating_load_r961",
+      "file": "energy_heating_load_r961.npz",
+      "reason": "selected_difficult_real_data",
+      "beta": null,
+      "auxiliary_u": 0.6962141721462395,
+      "target_feature": 4,
+      "observed_selected_features": [
+        3,
+        4
+      ],
+      "t_obs": 8.88694918738198,
+      "input_hash": "d1961609b842f9a58782d5cf22376993df7b31fbb06257a231fc0213e6478a2a",
+      "previous_p_value": null,
+      "previous_status": "insufficient_ess"
+    },
+    {
+      "case_id": "energy_heating_load_r442",
+      "file": "energy_heating_load_r442.npz",
+      "reason": "selected_difficult_real_data",
+      "beta": null,
+      "auxiliary_u": 0.4678440013412335,
+      "target_feature": 1,
+      "observed_selected_features": [
+        1,
+        4
+      ],
+      "t_obs": 7.715611723418666,
+      "input_hash": "993332495da0018cd4c4c4628cbe6adda80fc1562c810911a5cdf79b131c6cf0",
+      "previous_p_value": null,
+      "previous_status": "insufficient_ess"
+    },
+    {
+      "case_id": "control_heating_load_r303",
+      "file": "control_heating_load_r303.npz",
+      "reason": "matched_successful_real_data_control",
+      "beta": null,
+      "auxiliary_u": 0.3670166002028761,
+      "target_feature": 4,
+      "observed_selected_features": [
+        4,
+        6
+      ],
+      "t_obs": 8.889138650764957,
+      "input_hash": "7fd475bb3434de4984afa8e12ea511ab87383f26f9965c4930695f867ef3d12e",
+      "previous_p_value": 1.1211793615345801e-15,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "control_heating_load_r531",
+      "file": "control_heating_load_r531.npz",
+      "reason": "matched_successful_real_data_control",
+      "beta": null,
+      "auxiliary_u": 0.2186160918201365,
+      "target_feature": 1,
+      "observed_selected_features": [
+        1,
+        4
+      ],
+      "t_obs": 7.723817013653081,
+      "input_hash": "d3fc3d7c03a7c97d9f61acc763c6d13138400d4089d526b2c2cdaa28ff5eed45",
+      "previous_p_value": 2.8679335228121455e-11,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "energy_cooling_load_r614",
+      "file": "energy_cooling_load_r614.npz",
+      "reason": "selected_difficult_real_data",
+      "beta": null,
+      "auxiliary_u": 0.0858093139673925,
+      "target_feature": 1,
+      "observed_selected_features": [
+        1,
+        4
+      ],
+      "t_obs": 7.674974318400796,
+      "input_hash": "3820adf3721dc551ed75a702946d55d4059a9d98d22a6594c7774c8664ab0be2",
+      "previous_p_value": null,
+      "previous_status": "insufficient_ess"
+    },
+    {
+      "case_id": "energy_cooling_load_r224",
+      "file": "energy_cooling_load_r224.npz",
+      "reason": "selected_difficult_real_data",
+      "beta": null,
+      "auxiliary_u": 0.221738671734635,
+      "target_feature": 1,
+      "observed_selected_features": [
+        1,
+        4
+      ],
+      "t_obs": 7.098396400199984,
+      "input_hash": "89d4b0f66d2b8604b8749d60f790f4b298ad652149714c4c283ea62be1b4f2ab",
+      "previous_p_value": null,
+      "previous_status": "insufficient_ess"
+    },
+    {
+      "case_id": "control_cooling_load_r202",
+      "file": "control_cooling_load_r202.npz",
+      "reason": "matched_successful_real_data_control",
+      "beta": null,
+      "auxiliary_u": 0.2524495542011703,
+      "target_feature": 1,
+      "observed_selected_features": [
+        1,
+        4
+      ],
+      "t_obs": 7.67293210666649,
+      "input_hash": "af69e6b5880e5acac423a936fa17a9675c0daab8618081519d3cf6081f5e61d8",
+      "previous_p_value": 2.768587737654854e-09,
+      "previous_status": "ok"
+    },
+    {
+      "case_id": "control_cooling_load_r603",
+      "file": "control_cooling_load_r603.npz",
+      "reason": "matched_successful_real_data_control",
+      "beta": null,
+      "auxiliary_u": 0.0431042632293251,
+      "target_feature": 1,
+      "observed_selected_features": [
+        1,
+        4
+      ],
+      "t_obs": 7.054752070834865,
+      "input_hash": "ee9d5de5a7cafa320043f1f19be474ee7844875962988f77faa14468865951e9",
+      "previous_p_value": 7.037995482860277e-08,
+      "previous_status": "ok"
+    }
+  ],
+  "replay_cases": [
+    "old_beta_1.0_s17_i2",
+    "old_beta_1.0_s19_i5",
+    "old_beta_1.0_s27_i2",
+    "old_beta_0.75_s3_i1",
+    "old_null_s9_i8",
+    "energy_heating_load_r961",
+    "energy_cooling_load_r614",
+    "control_heating_load_r303"
+  ],
+  "selection_policy": "20 existing hard synthetic cases; 2 failures and 2 matched successful controls per Energy task"
+}
